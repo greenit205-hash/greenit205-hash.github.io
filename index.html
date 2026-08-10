@@ -1,0 +1,1147 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Jadłospis</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#6E1E46">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EFEDE6; --surface:#FFFFFF; --ink:#16181A; --muted:#6B6F6A; --line:#DCD8CE;
+  --berry:#6E1E46; --gold:#A87C00; --teal:#2E6F6A; --alert:#8C2F1B; --ok:#2E6F4A;
+  --r:14px; --pad:16px;
+  --display:"Bricolage Grotesque","Inter",system-ui,sans-serif;
+  --body:"Inter",system-ui,-apple-system,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;
+     padding-bottom:calc(76px + env(safe-area-inset-bottom))}
+h1,h2,h3{font-family:var(--display);font-weight:800;letter-spacing:-.02em;margin:0}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+button{font-family:inherit;font-size:inherit;cursor:pointer}
+input,select,textarea{font-family:inherit;font-size:16px}
+
+header{position:sticky;top:0;z-index:20;background:var(--paper);
+  padding:calc(10px + env(safe-area-inset-top)) var(--pad) 10px;border-bottom:1px solid var(--line)}
+.hrow{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.hrow h1{font-size:20px}
+.hsub{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.09em}
+.balance{margin-top:10px}
+.bar{position:relative;height:26px;border-radius:6px;background:#E2DFD6;overflow:hidden;display:flex}
+.bar span{display:block;height:100%}
+.bar .p{background:var(--berry)} .bar .c{background:var(--gold)} .bar .f{background:var(--teal)}
+.notch{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--ink)}
+.notch::after{content:"cel";position:absolute;top:-13px;left:50%;transform:translateX(-50%);
+  font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink)}
+.legend{display:flex;gap:14px;margin-top:8px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.legend b{font-family:var(--mono);color:var(--ink);font-weight:600}
+.dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:5px}
+
+main{padding:var(--pad);max-width:680px;margin:0 auto}
+.view{display:none} .view.on{display:block}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;margin-bottom:12px}
+.card h3{font-size:16px}
+.eyebrow{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.row{display:flex;gap:10px;align-items:center}
+.between{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.muted{color:var(--muted)} .small{font-size:13px} .tiny{font-size:11.5px}
+
+.btn{border:1px solid var(--ink);background:var(--ink);color:var(--paper);border-radius:10px;
+  padding:11px 14px;font-weight:600;line-height:1}
+.btn.primary{background:var(--berry);border-color:var(--berry);color:#fff}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn.sm{padding:7px 10px;font-size:13px;border-radius:8px}
+.btn:active{transform:translateY(1px)} .btn:disabled{opacity:.45}
+input[type=text],input[type=number],input[type=date],input[type=password],select,textarea{
+  width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+label.fld{display:block;margin-bottom:10px}
+label.fld > span{display:block;font-size:12px;color:var(--muted);margin-bottom:4px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+:focus-visible{outline:2px solid var(--berry);outline-offset:2px}
+
+.day{margin-bottom:18px}
+.dayhead{display:flex;justify-content:space-between;align-items:baseline;padding:0 2px 6px}
+.dayhead .d{font-family:var(--display);font-weight:800;font-size:17px}
+.dayhead .k{font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+.dayhead .k.bad{color:var(--alert)}
+.meal{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:12px 14px;margin-bottom:8px}
+.meal.eaten{opacity:.6}
+.meal .slot{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--berry);font-weight:600}
+.meal .name{font-family:var(--display);font-weight:600;font-size:16.5px;margin:2px 0 6px}
+.macros{display:flex;gap:12px;font-family:var(--mono);font-size:12px;color:var(--muted);flex-wrap:wrap}
+.macros b{color:var(--ink);font-weight:600}
+.ings{margin:8px 0 0;padding:0;list-style:none;border-top:1px dashed var(--line);padding-top:8px}
+.ings li{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:13.5px;padding:3px 0}
+.ings .nm{flex:1}
+.ings input{width:74px;padding:5px 6px;text-align:right;font-family:var(--mono);font-size:14px}
+.tag{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;padding:2px 5px;border-radius:4px;
+  border:1px solid var(--line);color:var(--muted)}
+.tag.k{border-color:var(--berry);color:var(--berry)}
+.tag.l{border-color:var(--ink);color:var(--ink);background:#EFEDE6}
+details summary{cursor:pointer;font-size:13px;color:var(--berry);font-weight:600;list-style:none}
+details summary::-webkit-details-marker{display:none}
+details summary::before{content:"+ "} details[open] summary::before{content:"– "}
+
+.item{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line)}
+.item:last-child{border-bottom:0}
+.item .t{font-weight:500}
+.pill{font-size:11px;padding:3px 8px;border:1px solid var(--line);border-radius:999px;color:var(--muted);white-space:nowrap}
+.pill.on{background:var(--berry);border-color:var(--berry);color:#fff}
+.chk{width:22px;height:22px;accent-color:var(--berry)}
+.done{opacity:.45;text-decoration:line-through}
+.stars{letter-spacing:2px;color:var(--gold);font-size:13px}
+
+nav{position:fixed;left:0;right:0;bottom:0;z-index:30;display:flex;background:var(--surface);
+  border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav button{flex:1;border:0;background:none;padding:10px 2px 12px;color:var(--muted);font-size:10.5px;
+  display:flex;flex-direction:column;align-items:center;gap:3px}
+nav button .ic{font-size:17px;line-height:1}
+nav button.on{color:var(--berry);font-weight:600}
+
+.sheet{position:fixed;inset:0;z-index:50;background:rgba(20,20,20,.42);display:none;align-items:flex-end}
+.sheet.on{display:flex}
+.sheet .inner{background:var(--paper);width:100%;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;
+  padding:16px 16px calc(24px + env(safe-area-inset-bottom));max-width:680px;margin:0 auto}
+.toast{position:fixed;left:50%;bottom:88px;transform:translateX(-50%);z-index:80;background:var(--ink);
+  color:var(--paper);padding:10px 16px;border-radius:999px;font-size:13.5px;opacity:0;pointer-events:none;
+  transition:opacity .18s;max-width:90%;text-align:center}
+.toast.on{opacity:1}
+.empty{text-align:center;padding:28px 10px;color:var(--muted)}
+.spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);border-top-color:var(--berry);
+  border-radius:50%;animation:s .7s linear infinite;vertical-align:-2px;margin-right:6px}
+@keyframes s{to{transform:rotate(360deg)}}
+video{width:100%;border-radius:12px;background:#000}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hrow"><h1 id="hTitle">Tydzień</h1><div class="hsub" id="hDate"></div></div>
+  <div class="balance" id="balance"></div>
+</header>
+
+<main>
+  <section class="view on" id="v-week">
+    <div class="card">
+      <div class="between">
+        <div style="flex:1">
+          <div class="eyebrow">Plan od</div>
+          <input type="date" id="weekStart" style="margin-top:4px">
+        </div>
+        <button class="btn primary" id="btnGen">Ułóż tydzień</button>
+      </div>
+      <label class="fld" style="margin:12px 0 0">
+        <span>Życzenia na ten tydzień (opcjonalnie)</span>
+        <input type="text" id="wish" placeholder="np. w środę mało czasu, więcej azjatyckich">
+      </label>
+      <div class="row small muted" style="gap:14px;flex-wrap:wrap">
+        <label class="row" style="gap:6px"><input type="checkbox" id="optAI" class="chk" checked> układa AI</label>
+        <select id="optRepeat" style="width:auto;padding:6px 8px;font-size:13px">
+          <option value="0">bez powtórek</option>
+          <option value="1" selected>powtórki czasem</option>
+          <option value="2">gotuję na 2 dni</option>
+        </select>
+      </div>
+    </div>
+    <div id="weekList"></div>
+  </section>
+
+  <section class="view" id="v-meals">
+    <div class="between" style="margin-bottom:10px">
+      <input type="text" id="mealSearch" placeholder="Szukaj posiłku" style="flex:1">
+      <button class="btn sm ghost" id="btnAiMeal">AI</button>
+      <button class="btn sm primary" id="btnNewMeal">Nowy</button>
+    </div>
+    <div id="mealList"></div>
+  </section>
+
+  <section class="view" id="v-prod">
+    <div class="between" style="margin-bottom:10px">
+      <input type="text" id="prodSearch" placeholder="Szukaj produktu" style="flex:1">
+      <button class="btn sm primary" id="btnScan">Skanuj</button>
+      <button class="btn sm ghost" id="btnNewProd">+</button>
+    </div>
+    <div id="prodList"></div>
+  </section>
+
+  <section class="view" id="v-shop">
+    <div class="card">
+      <div class="grid2">
+        <label class="fld"><span>Od dnia</span><select id="shopFrom"></select></label>
+        <label class="fld" style="margin-bottom:0"><span>Do dnia</span><select id="shopTo"></select></label>
+      </div>
+      <button class="btn primary" id="btnShop" style="width:100%;margin-top:4px">Zrób listę zakupów</button>
+    </div>
+    <div id="shopList"></div>
+  </section>
+
+  <section class="view" id="v-set">
+    <div class="card">
+      <h3>Cel dzienny</h3>
+      <div class="grid2" style="margin-top:10px">
+        <label class="fld"><span>Kalorie</span><input type="number" id="sKcal"></label>
+        <label class="fld"><span>Białko (g)</span><input type="number" id="sProt"></label>
+        <label class="fld"><span>Tłuszcz (g)</span><input type="number" id="sFat"></label>
+        <label class="fld"><span>Węglowodany (g)</span><input type="number" id="sCarb" disabled></label>
+      </div>
+      <div class="grid3">
+        <label class="fld"><span>Śniadanie %</span><input type="number" id="sB"></label>
+        <label class="fld"><span>Obiad %</span><input type="number" id="sL"></label>
+        <label class="fld"><span>Kolacja %</span><input type="number" id="sD"></label>
+      </div>
+      <p class="tiny muted" id="splitInfo" style="margin:0"></p>
+    </div>
+    <div class="card">
+      <h3>Claude (AI)</h3>
+      <p class="small muted">Adres Twojego proxy na Cloudflare i hasło z pliku worker.js.</p>
+      <label class="fld"><span>Adres proxy</span><input type="text" id="aiUrl" placeholder="https://jadlospis-ai.xxx.workers.dev"></label>
+      <label class="fld"><span>Hasło</span><input type="password" id="aiSecret"></label>
+      <div class="row" style="gap:8px"><button class="btn ghost sm" id="btnAiTest">Sprawdź połączenie</button>
+        <span class="small" id="aiStatus"></span></div>
+    </div>
+    <div class="card">
+      <h3>Dane</h3>
+      <p class="small muted">Wszystko siedzi w tym telefonie. Rób kopię co jakiś czas.</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="btn ghost sm" id="btnExport">Zapisz kopię</button>
+        <button class="btn ghost sm" id="btnImport">Wczytaj kopię / paczkę</button>
+        <button class="btn ghost sm" id="btnReset">Wyczyść wszystko</button>
+      </div>
+      <input type="file" id="fileIn" accept="application/json" style="display:none">
+      <p class="tiny muted" id="storeInfo" style="margin-top:10px"></p>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button data-v="week" class="on"><span class="ic">▤</span>Tydzień</button>
+  <button data-v="meals"><span class="ic">◍</span>Posiłki</button>
+  <button data-v="prod"><span class="ic">☰</span>Produkty</button>
+  <button data-v="shop"><span class="ic">✓</span>Zakupy</button>
+  <button data-v="set"><span class="ic">⚙</span>Ustawienia</button>
+</nav>
+
+<div class="sheet" id="sheet"><div class="inner" id="sheetInner"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ==========================================================================
+   Jadłospis v2 — kotwice porcji, rebalans dnia, skaner etykiet, Claude.
+   Liczenie makro robi kod (deterministycznie). AI tylko dobiera dania
+   i czyta etykiety — nigdy nie liczy gramatury.
+   ========================================================================== */
+
+const KEY   = "jadlospis.v2";
+const SLOTS = [{id:"b",name:"Śniadanie"},{id:"l",name:"Obiad"},{id:"d",name:"Kolacja"}];
+const CATS  = ["mięso i ryby","nabiał i jaja","zboża i pieczywo","warzywa","owoce","tłuszcze i orzechy","strączki","inne"];
+const DOW   = ["niedziela","poniedziałek","wtorek","środa","czwartek","piątek","sobota"];
+
+let S = null;
+
+/* ---------- narzędzia ---------- */
+const uid = () => Math.random().toString(36).slice(2,9);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const r1  = v => Math.round((+v||0)*10)/10;
+function todayISO(d){ const x=d||new Date(); return new Date(x-x.getTimezoneOffset()*6e4).toISOString().slice(0,10); }
+function addDays(iso,n){ const d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+n); return todayISO(d); }
+function dowOf(iso){ return new Date(iso+"T12:00:00").getDay(); }
+function plDay(iso){ const d=new Date(iso+"T12:00:00"); const n=DOW[d.getDay()];
+  return n[0].toUpperCase()+n.slice(1)+", "+d.getDate()+"."+String(d.getMonth()+1).padStart(2,"0"); }
+
+/* ---------- pamięć ---------- */
+function emptyState(){
+  return { settings:{kcal:2400,prot:170,fat:75,split:{b:30,l:38,d:32},rules:[]},
+           products:[], meals:[], plan:{}, log:[], shopChecked:{},
+           weekStart: todayISO(), ai:{url:"",secret:""} };
+}
+function load(){
+  try{ const raw = localStorage.getItem(KEY); if(raw){ S = JSON.parse(raw); return; } }catch(e){}
+  S = emptyState(); save();
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
+
+/* ---------- makro ---------- */
+const P  = id => S.products.find(p=>p.id===id);
+const per = p => ({k:p.kcal/100, p:p.prot/100, c:p.carb/100, f:p.fat/100});
+function sumMacro(list){
+  let k=0,p=0,c=0,f=0;
+  for(const i of list){ const pr=P(i.pid); if(!pr) continue; const g=i.g/100;
+    k+=pr.kcal*g; p+=pr.prot*g; c+=pr.carb*g; f+=pr.fat*g; }
+  return {kcal:k, prot:p, carb:c, fat:f};
+}
+const targetCarb = () => Math.max(0, Math.round((S.settings.kcal - S.settings.prot*4 - S.settings.fat*9)/4));
+const dayTarget  = () => ({kcal:S.settings.kcal, prot:S.settings.prot, carb:targetCarb(), fat:S.settings.fat});
+function slotTarget(slot){ const q=S.settings.split[slot]/100; const t=dayTarget();
+  return {kcal:t.kcal*q, prot:t.prot*q, carb:t.carb*q, fat:t.fat*q}; }
+function dayIngs(day){ const a=[]; SLOTS.forEach(s=>{ if(day&&day[s.id]) a.push(...day[s.id].ings); }); return a; }
+function dayMacro(iso){ const d=S.plan[iso]; return d ? sumMacro(dayIngs(d)) : null; }
+
+/* ==========================================================================
+   SOLVER — dobiera gramatury tak, żeby dzień trafił w cel.
+   Kotwice (mięso, jajka, ryż, całe opakowania) trzymają się swojej wartości;
+   ruszają się dopiero, gdy bufory nie dają rady. Zablokowane (Twoja ręczna
+   zmiana) nie ruszają się nigdy.
+   ========================================================================== */
+const W = {kcal:1/9, prot:1.4, carb:0.45, fat:0.9, anchor:0.35};
+
+function solveDay(day, target){
+  const vars = [];
+  SLOTS.forEach(s=>{
+    const e = day[s.id]; if(!e) return;
+    e.ings.forEach(i=>{
+      if(i.locked || i.role==="staly") return;
+      const pr = P(i.pid); if(!pr) return;
+      const lo = Math.max(1, Math.round(i.min ?? (i.role==="kotwica" ? i.g : i.g*0.35)));
+      const hi = Math.max(lo, Math.round(i.max ?? (i.role==="kotwica" ? i.g : Math.min(600, i.g*2.6))));
+      if(hi <= lo) return;
+      vars.push({ing:i, per:per(pr), lo, hi, base:(i.base ?? i.g), anchor:i.role==="kotwica"});
+    });
+  });
+
+  let tot = sumMacro(dayIngs(day));
+  const pen = () => vars.reduce((a,v)=> a + (v.anchor ? W.anchor*Math.abs(v.ing.g - v.base) : 0), 0);
+  const err = t => W.kcal*Math.abs(t.kcal-target.kcal) + W.prot*Math.abs(t.prot-target.prot)
+                 + W.carb*Math.abs(t.carb-target.carb) + W.fat*Math.abs(t.fat-target.fat);
+  const shift = (v, from, to) => {          // per(...) jest na 1 g
+    const d = to - from;
+    tot.kcal+=v.per.k*d; tot.prot+=v.per.p*d; tot.carb+=v.per.c*d; tot.fat+=v.per.f*d;
+  };
+
+  if(!vars.length) return {tot, err:err(tot)};
+
+  const cand = (v)=>{
+    const out=new Set([v.ing.g, v.lo, v.hi, v.base]);
+    const step=Math.max(1,Math.round((v.hi-v.lo)/16));
+    for(let g=v.lo; g<=v.hi; g+=step) out.add(g);
+    return [...out].filter(g=>g>=v.lo && g<=v.hi);
+  };
+
+  for(let pass=0; pass<6; pass++){
+    let moved=false;
+    for(const v of vars){
+      const cur=v.ing.g;
+      let bestG=cur, bestS=err(tot)+pen();
+      const list = pass<2 ? cand(v) : [cur-15,cur-6,cur-2,cur-1,cur+1,cur+2,cur+6,cur+15]
+                                       .filter(g=>g>=v.lo&&g<=v.hi);
+      for(const g of list){
+        if(g===cur) continue;
+        shift(v,cur,g); v.ing.g=g;
+        const sc = err(tot)+pen();
+        if(sc < bestS-1e-9){ bestS=sc; bestG=g; }
+        shift(v,g,cur); v.ing.g=cur;
+      }
+      if(bestG!==cur){ shift(v,cur,bestG); v.ing.g=bestG; moved=true; }
+    }
+    if(!moved && pass>=2) break;
+  }
+  return {tot: sumMacro(dayIngs(day)), err: err(sumMacro(dayIngs(day)))};
+}
+
+function ingsFromMeal(meal){
+  return meal.ings.map(i=>({pid:i.pid, g:i.g, base:i.g, role:i.role||"bufor",
+                            min:i.min, max:i.max, locked:false}));
+}
+function buildDay(sel){
+  const day = {};
+  SLOTS.forEach(s=>{
+    const m = S.meals.find(x=>x.id===sel[s.id]);
+    if(m) day[s.id] = {recipeId:m.id, ings:ingsFromMeal(m)};
+  });
+  return day;
+}
+function rebalance(iso){
+  const day = S.plan[iso]; if(!day) return;
+  solveDay(day, dayTarget());
+  save();
+}
+function dayStatus(iso){
+  const m = dayMacro(iso); if(!m) return null;
+  const t = dayTarget();
+  const ok = Math.abs(m.kcal-t.kcal)<=60 && Math.abs(m.prot-t.prot)<=8
+          && Math.abs(m.carb-t.carb)<=15 && Math.abs(m.fat-t.fat)<=6;
+  return {m, ok};
+}
+
+/* ==========================================================================
+   WYBÓR DAŃ — lokalny (zawsze działa) i przez Claude (jeśli podłączony)
+   ========================================================================== */
+function candidates(slot, dow){
+  const excl = new Set(S.products.filter(p=>p.excluded).map(p=>p.id));
+  let pool = S.meals.filter(m => m.slot===slot && !m.ings.some(i=>excl.has(i.pid)));
+  const rule = (S.settings.rules||[]).find(r=>r.dow===dow && r.slot===slot);
+  if(rule){ const tagged = pool.filter(m=>(m.tags||[]).includes(rule.tag)); if(tagged.length) return tagged; }
+  else { pool = pool.filter(m => !(m.tags||[]).includes("stek") || slot!=="l"); }
+  return pool;
+}
+/* Białko jest najsztywniejsze — siedzi w kotwicach, więc bufory go nie naprawią.
+   Dlatego zestaw dnia dobieramy tak, żeby suma białka z bazowych gramatur
+   była blisko celu; resztę (kcal, węgle, tłuszcz) doreguluje solver.        */
+function selBounds(sel){
+  const fl={k:0,p:0,c:0,f:0}, ce={k:0,p:0,c:0,f:0};
+  SLOTS.forEach(s=>{
+    const m = S.meals.find(x=>x.id===sel[s.id]); if(!m) return;
+    m.ings.forEach(i=>{
+      const pr=P(i.pid); if(!pr) return; const u=per(pr);
+      const lo = i.role==="staly" ? i.g : (i.min ?? i.g);
+      const hi = i.role==="staly" ? i.g : (i.max ?? i.g);
+      fl.k+=u.k*lo; fl.p+=u.p*lo; fl.c+=u.c*lo; fl.f+=u.f*lo;
+      ce.k+=u.k*hi; ce.p+=u.p*hi; ce.c+=u.c*hi; ce.f+=u.f*hi;
+    });
+  });
+  return {fl,ce};
+}
+/* 0 = dzień da się doregulować do celu; więcej = zestaw z góry nie trafi */
+function selScore(sel){
+  const {fl,ce} = selBounds(sel), t = dayTarget();
+  const d = (lo,hi,x) => x<lo ? lo-x : (x>hi ? x-hi : 0);
+  return d(fl.k,ce.k,t.kcal)/9 + 1.4*d(fl.p,ce.p,t.prot)
+       + 0.45*d(fl.c,ce.c,t.carb) + 0.9*d(fl.f,ce.f,t.fat);
+}
+function pickWeighted(list){
+  const w = list.map(m=>Math.pow(m.rating||3,2));
+  let r = Math.random()*w.reduce((a,b)=>a+b,0), pick = list[list.length-1];
+  for(let j=0;j<list.length;j++){ r-=w[j]; if(r<=0) return list[j]; }
+  return pick;
+}
+function poolsFor(dow, recent, mode){
+  const back = mode===0 ? 4 : (mode===1 ? 2 : 1);
+  const out = {};
+  SLOTS.forEach(s=>{
+    const pool = candidates(s.id, dow);
+    let avail = pool.filter(m=>!recent[s.id].slice(-back).includes(m.id));
+    out[s.id] = avail.length ? avail : pool;
+  });
+  return out;
+}
+function fixSelection(day, pools){          // podmienia danie, jeśli zestaw nie da się doregulować
+  let best = {...day}, bestE = selScore(best);
+  for(let round=0; round<2 && bestE>0.5; round++){
+    let improved = false;
+    for(const s of SLOTS){
+      for(const m of (pools[s.id]||[])){
+        const trial = {...best, [s.id]:m.id};
+        const e = selScore(trial);
+        if(e < bestE-0.5){ best = trial; bestE = e; improved = true; }
+      }
+    }
+    if(!improved) break;
+  }
+  return best;
+}
+function pickLocal(start){
+  const mode = +document.getElementById("optRepeat").value;
+  const sel = [];
+  const recent = {b:[], l:[], d:[]};
+  for(let i=0;i<7;i++){
+    const iso = addDays(start,i), dow = dowOf(iso);
+    const pools = poolsFor(dow, recent, mode);
+    let best=null, bestScore=Infinity;
+    for(let attempt=0; attempt<60; attempt++){
+      const day = {};
+      SLOTS.forEach(s=>{
+        const pool = pools[s.id];
+        if(!pool || !pool.length){ day[s.id]=null; return; }
+        if(mode===2 && s.id==="l" && i%2===1 && sel[i-1] && sel[i-1].l && dow!==0
+           && candidates("l",dow).some(m=>m.id===sel[i-1].l)){ day[s.id]=sel[i-1].l; return; }
+        day[s.id] = pickWeighted(pool).id;
+      });
+      const sc = selScore(day);
+      if(sc < bestScore){ bestScore = sc; best = day; }
+      if(sc === 0) break;
+    }
+    SLOTS.forEach(s=>{ if(best[s.id]) recent[s.id].push(best[s.id]); });
+    sel.push(best);
+  }
+  return sel;
+}
+
+async function pickAI(start, wish){
+  const menu = SLOTS.map(s=>({
+    slot:s.id,
+    dania:S.meals.filter(m=>m.slot===s.id).map(m=>({n:m.name, ocena:m.rating, min:m.time, tagi:m.tags||[]}))
+  }));
+  const hist = (S.log||[]).slice(-40).map(l=>`${l.date} ${l.slot}: ${l.name} (${l.action})`);
+  const dni = [];
+  for(let i=0;i<7;i++){ const iso=addDays(start,i); dni.push({data:iso, dzien:DOW[dowOf(iso)]}); }
+  const mode = ["bez powtórek","powtórki dozwolone od czasu do czasu","gotuję raz na dwa dni — ten sam obiad w parach dni"][+document.getElementById("optRepeat").value];
+  const rules = (S.settings.rules||[]).map(r=>r.label).join("; ");
+
+  const sys = `Jesteś planistą jadłospisu. Dobierasz WYŁĄCZNIE nazwy dań z podanej listy — nie wymyślasz nowych, nie podajesz gramatur ani kalorii (gramaturę liczy osobny solver).
+Zasady: ${rules||"brak"}. Powtórki: ${mode}.
+Dbaj o różnorodność źródeł białka i kuchni w tygodniu, nie powtarzaj tego samego dania w dwa kolejne dni (chyba że tryb powtórek na to pozwala), wyżej oceniane dania mogą pojawiać się częściej, w dni robocze preferuj krótszy czas przygotowania.
+Odpowiadasz WYŁĄCZNIE obiektem JSON, bez komentarza i bez markdown:
+{"dni":[{"data":"YYYY-MM-DD","b":"nazwa","l":"nazwa","d":"nazwa"}]}`;
+
+  const user = `Dni: ${JSON.stringify(dni)}
+Dostępne dania: ${JSON.stringify(menu)}
+Ostatnio jedzone: ${JSON.stringify(hist)}
+Życzenia użytkownika: ${wish||"brak"}`;
+
+  const txt = await aiCall({model:"claude-opus-5", max_tokens:2000, system:sys,
+                            messages:[{role:"user",content:user}]});
+  const data = JSON.parse(stripJson(txt));
+  const byName = {}; S.meals.forEach(m=>byName[m.name.toLowerCase().trim()]=m.id);
+  const sel=[];
+  for(let i=0;i<7;i++){
+    const iso = addDays(start,i);
+    const row = (data.dni||[]).find(d=>d.data===iso) || (data.dni||[])[i] || {};
+    const day = {};
+    SLOTS.forEach(s=>{ day[s.id] = byName[String(row[s.id]||"").toLowerCase().trim()] || null; });
+    sel.push(day);
+  }
+  return sel;
+}
+
+async function generateWeek(){
+  const start = document.getElementById("weekStart").value || todayISO();
+  const wish  = document.getElementById("wish").value.trim();
+  const useAI = document.getElementById("optAI").checked && S.ai.url;
+  if(!S.meals.length){ toast("Najpierw wczytaj bazę startową w Ustawieniach."); return; }
+  S.weekStart = start;
+  let sel = null, viaAI = false;
+  if(useAI){
+    busy(true,"Claude układa tydzień…");
+    try{ sel = await pickAI(start, wish); viaAI = true; }
+    catch(e){ toast("AI nie odpowiedziało — układam lokalnie."); }
+    busy(false);
+  }
+  const fallback = pickLocal(start);
+  if(!sel) sel = fallback;
+  else {
+    const mode = +document.getElementById("optRepeat").value;
+    const recent = {b:[],l:[],d:[]};
+    for(let i=0;i<7;i++){
+      SLOTS.forEach(s=>{ if(!sel[i][s.id]) sel[i][s.id] = fallback[i][s.id]; });
+      sel[i] = fixSelection(sel[i], poolsFor(dowOf(addDays(start,i)), recent, mode));
+      SLOTS.forEach(s=>{ if(sel[i][s.id]) recent[s.id].push(sel[i][s.id]); });
+    }
+  }
+  for(let i=0;i<7;i++){
+    const iso = addDays(start,i);
+    const day = buildDay(sel[i]);
+    if(!Object.keys(day).length) continue;
+    S.plan[iso] = day;
+    solveDay(day, dayTarget());
+  }
+  save(); renderWeek(); renderShopSelectors();
+  toast(viaAI ? "Tydzień ułożony przez Claude'a." : "Tydzień ułożony.");
+}
+
+function rerollMeal(iso, slotId){
+  const day = S.plan[iso]; if(!day||!day[slotId]) return;
+  const pool = candidates(slotId, dowOf(iso)).filter(m=>m.id!==day[slotId].recipeId);
+  if(!pool.length){ toast("Brak innego dania na tę porę."); return; }
+  const old = S.meals.find(m=>m.id===day[slotId].recipeId);
+  const pick = pool[Math.floor(Math.random()*pool.length)];
+  day[slotId] = {recipeId:pick.id, ings:ingsFromMeal(pick)};
+  logAdd(iso, slotId, old?old.name:"?", "zamienione");
+  solveDay(day, dayTarget()); save(); renderWeek();
+}
+function logAdd(date, slot, name, action){
+  S.log = S.log || []; S.log.push({date, slot, name, action});
+  if(S.log.length>300) S.log = S.log.slice(-300);
+}
+
+/* ==========================================================================
+   AI — wszystko przez Twój proxy (klucz nigdy nie leży w telefonie)
+   ========================================================================== */
+function stripJson(t){
+  const s = String(t).trim().replace(/^```(json)?/i,"").replace(/```$/,"").trim();
+  const a = s.indexOf("{"), b = s.lastIndexOf("}");
+  return (a>=0 && b>a) ? s.slice(a,b+1) : s;
+}
+async function aiCall(body){
+  if(!S.ai.url) throw new Error("Brak adresu proxy");
+  const r = await fetch(S.ai.url, {
+    method:"POST",
+    headers:{"Content-Type":"application/json","X-App-Secret":S.ai.secret||""},
+    body: JSON.stringify(body)
+  });
+  if(!r.ok) throw new Error("HTTP "+r.status+" "+(await r.text()).slice(0,120));
+  const d = await r.json();
+  if(d.error) throw new Error(d.error.message||"błąd API");
+  return (d.content||[]).map(c=>c.text||"").join("\n");
+}
+
+async function aiLabel(base64, mime){
+  const sys = `Czytasz zdjęcie tabeli wartości odżywczych polskiego produktu spożywczego.
+Zwracasz WYŁĄCZNIE JSON, bez komentarza:
+{"name":"nazwa produktu z marką","kcal":0,"prot":0,"carb":0,"fat":0,"cat":"jedna z: ${CATS.join(' | ')}","piece":null,"pack":null}
+kcal/prot/carb/fat ZAWSZE przeliczone na 100 g lub 100 ml produktu (jeśli tabela podaje na porcję, przelicz).
+pack = masa netto opakowania w gramach jeśli widoczna (dla produktów w zalewie: masa po odsączeniu), inaczej null.
+piece = masa jednej sztuki w gramach jeśli produkt jest sztukowy, inaczej null.
+Jeśli czegoś nie widać, wpisz null. Nie zgaduj marki, której nie widzisz.`;
+  const txt = await aiCall({model:"claude-sonnet-5", max_tokens:600, system:sys, messages:[{
+    role:"user", content:[
+      {type:"image", source:{type:"base64", media_type:mime, data:base64}},
+      {type:"text", text:"Odczytaj wartości odżywcze."}]}]});
+  return JSON.parse(stripJson(txt));
+}
+
+async function aiRecipes(wish){
+  const prods = S.products.map(p=>p.name);
+  const have  = S.meals.map(m=>m.name);
+  const sys = `Tworzysz przepisy do aplikacji dietetycznej. Zwracasz WYŁĄCZNIE JSON:
+{"meals":[{"name":"...","slot":"b|l|d","rating":4,"time":25,"tags":[],
+ "ings":[{"p":"dokładna nazwa produktu z listy","g":100,"role":"kotwica|bufor|staly","min":0,"max":0}]}]}
+Zasady ról (bardzo ważne):
+- "kotwica" — mięso na obiad (min 250, max 300), jajka (min 150, max 170), ryż/makaron/kasza sucha (min 90, max 110), produkt zjadany w całym opakowaniu (min=max=masa opakowania).
+- "bufor" — pieczywo, ziemniaki, płatki, oliwa, jogurt, owoce, ser. min = ok. 40% wartości g, max = ok. 250%.
+- "staly" — warzywa, sosy, przyprawy, zioła: min=max=g.
+Używasz WYŁĄCZNIE produktów z listy. Gramatury podajesz na jedną porcję dla mężczyzny na 2400 kcal (śniadanie ~720, obiad ~910, kolacja ~770 kcal). Przepisy proste i szybkie.`;
+  const user = `Lista produktów: ${JSON.stringify(prods)}
+Mam już takie dania (nie powtarzaj): ${JSON.stringify(have)}
+Czego szukam: ${wish}`;
+  const txt = await aiCall({model:"claude-opus-5", max_tokens:4000, system:sys,
+                            messages:[{role:"user",content:user}]});
+  return JSON.parse(stripJson(txt));
+}
+
+/* ==========================================================================
+   WIDOK: TYDZIEŃ
+   ========================================================================== */
+function renderBalance(){
+  const el = document.getElementById("balance");
+  const iso = todayISO();
+  const m = dayMacro(iso) || {kcal:0,prot:0,carb:0,fat:0};
+  const t = dayTarget();
+  const kP=m.prot*4, kC=m.carb*4, kF=m.fat*9;
+  const scale = Math.max(t.kcal*1.25, m.kcal*1.05, 1);
+  const w = v => (v/scale*100).toFixed(1)+"%";
+  el.innerHTML = `
+    <div class="bar">
+      <span class="p" style="width:${w(kP)}"></span><span class="c" style="width:${w(kC)}"></span>
+      <span class="f" style="width:${w(kF)}"></span>
+      <div class="notch" style="left:${(t.kcal/scale*100).toFixed(1)}%"></div>
+    </div>
+    <div class="legend">
+      ${m.kcal ? `<span><b class="num">${Math.round(m.kcal)}</b> / ${t.kcal} kcal</span>`
+               : `<span class="muted">Dziś nic nie zaplanowane</span>`}
+      <span><i class="dot" style="background:var(--berry)"></i>B <b>${Math.round(m.prot)}</b>/${t.prot}</span>
+      <span><i class="dot" style="background:var(--gold)"></i>W <b>${Math.round(m.carb)}</b>/${t.carb}</span>
+      <span><i class="dot" style="background:var(--teal)"></i>T <b>${Math.round(m.fat)}</b>/${t.fat}</span>
+    </div>`;
+  document.getElementById("hDate").textContent = plDay(iso);
+}
+
+function renderWeek(){
+  const wrap = document.getElementById("weekList");
+  const start = S.weekStart || todayISO();
+  document.getElementById("weekStart").value = start;
+  let html = "", any = false;
+  for(let i=0;i<7;i++){
+    const iso = addDays(start,i), day = S.plan[iso];
+    if(!day) continue;
+    any = true;
+    const st = dayStatus(iso);
+    html += `<div class="day"><div class="dayhead">
+      <span class="d">${plDay(iso)}</span>
+      <span class="k ${st.ok?"":"bad"}">${Math.round(st.m.kcal)} kcal · B${Math.round(st.m.prot)} W${Math.round(st.m.carb)} T${Math.round(st.m.fat)}</span>
+    </div>`;
+    SLOTS.forEach(s=>{
+      const e = day[s.id]; if(!e) return;
+      const meal = S.meals.find(m=>m.id===e.recipeId);
+      const mm = sumMacro(e.ings);
+      html += `<div class="meal ${e.eaten?"eaten":""}">
+        <div class="between">
+          <span class="slot">${s.name}</span>
+          <div class="row" style="gap:6px">
+            <button class="btn ghost sm" data-eat="${iso}|${s.id}">${e.eaten?"✓ zjedzone":"Zjedzone"}</button>
+            <button class="btn ghost sm" data-reroll="${iso}|${s.id}">Zamień</button>
+          </div>
+        </div>
+        <div class="name">${meal?esc(meal.name):"usunięte danie"}</div>
+        <div class="macros"><span><b>${Math.round(mm.kcal)}</b> kcal</span><span>B <b>${Math.round(mm.prot)}</b></span>
+          <span>W <b>${Math.round(mm.carb)}</b></span><span>T <b>${Math.round(mm.fat)}</b></span>
+          ${meal&&meal.time?`<span>${meal.time} min</span>`:""}</div>
+        <details><summary>Gramatura</summary>
+          <ul class="ings">${e.ings.map((ing,idx)=>{
+            const p=P(ing.pid); if(!p) return "";
+            const unit = p.piece ? ` <span class="tiny muted">${(ing.g/p.piece).toFixed(1).replace(".0","")} szt</span>` : "";
+            const tag = ing.locked ? `<span class="tag l">stałe</span>`
+                      : ing.role==="kotwica" ? `<span class="tag k">kotwica</span>` : "";
+            return `<li><span class="nm">${esc(p.name)}${unit}</span>${tag}
+              <input type="number" data-g="${iso}|${s.id}|${idx}" value="${ing.g}" inputmode="numeric">
+              <button class="btn ghost sm" data-unlock="${iso}|${s.id}|${idx}" ${ing.locked?"":'style="visibility:hidden"'}>↺</button></li>`;
+          }).join("")}</ul>
+          <p class="tiny muted" style="margin:8px 0 0">Zmień dowolną liczbę — reszta dnia przeliczy się sama.</p>
+        </details>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+  wrap.innerHTML = any ? html
+    : `<div class="empty"><h3>Pusty tydzień</h3><p class="small">Wybierz dzień startu i naciśnij „Ułóż tydzień”.</p></div>`;
+
+  wrap.querySelectorAll("[data-reroll]").forEach(b=> b.onclick=()=>{
+    const [iso,s]=b.dataset.reroll.split("|"); rerollMeal(iso,s); });
+  wrap.querySelectorAll("[data-eat]").forEach(b=> b.onclick=()=>{
+    const [iso,s]=b.dataset.eat.split("|"); const e=S.plan[iso][s];
+    e.eaten=!e.eaten;
+    if(e.eaten){ const m=S.meals.find(x=>x.id===e.recipeId); logAdd(iso,s,m?m.name:"?","zjedzone"); }
+    save(); renderWeek(); });
+  wrap.querySelectorAll("[data-g]").forEach(inp=> inp.onchange=()=>{
+    const [iso,s,idx]=inp.dataset.g.split("|");
+    const ing = S.plan[iso][s].ings[+idx];
+    ing.g = Math.max(1, Math.round(+inp.value||1)); ing.locked = true;
+    rebalance(iso); renderWeek(); renderBalance();
+    toast("Przeliczone — reszta dnia dostosowana."); });
+  wrap.querySelectorAll("[data-unlock]").forEach(b=> b.onclick=()=>{
+    const [iso,s,idx]=b.dataset.unlock.split("|");
+    S.plan[iso][s].ings[+idx].locked=false; rebalance(iso); renderWeek(); });
+  renderBalance();
+}
+
+/* ==========================================================================
+   WIDOK: POSIŁKI / PRODUKTY
+   ========================================================================== */
+function renderMeals(){
+  const q = document.getElementById("mealSearch").value.toLowerCase().trim();
+  let html = "";
+  SLOTS.forEach(s=>{
+    const list = S.meals.filter(m=>m.slot===s.id && m.name.toLowerCase().includes(q));
+    if(!list.length) return;
+    html += `<div class="card"><div class="eyebrow">${s.name}</div><div style="margin-top:6px">`;
+    list.forEach(m=>{
+      const mm = sumMacro(m.ings);
+      html += `<div class="item"><div>
+        <div class="t">${esc(m.name)}</div>
+        <div class="tiny muted num">${Math.round(mm.kcal)} kcal · B${Math.round(mm.prot)} W${Math.round(mm.carb)} T${Math.round(mm.fat)} · ${m.time||"?"} min</div>
+        <div class="stars">${"★".repeat(m.rating)}${"☆".repeat(5-m.rating)}</div>
+      </div><button class="btn ghost sm" data-meal="${m.id}">Edytuj</button></div>`;
+    });
+    html += `</div></div>`;
+  });
+  const wrap = document.getElementById("mealList");
+  wrap.innerHTML = html || `<div class="empty"><h3>Brak dań</h3><p class="small">Wczytaj bazę startową albo poproś AI o przepisy.</p></div>`;
+  wrap.querySelectorAll("[data-meal]").forEach(b=> b.onclick=()=>mealSheet(b.dataset.meal));
+}
+
+function renderProducts(){
+  const q = document.getElementById("prodSearch").value.toLowerCase().trim();
+  let html = "";
+  CATS.forEach(c=>{
+    const list = S.products.filter(p=>p.cat===c && p.name.toLowerCase().includes(q));
+    if(!list.length) return;
+    html += `<div class="card"><div class="eyebrow">${c}</div><div style="margin-top:6px">`;
+    list.forEach(p=>{
+      html += `<div class="item ${p.excluded?"done":""}"><div>
+        <div class="t">${esc(p.name)}</div>
+        <div class="tiny muted num">${p.kcal} kcal · B${p.prot} W${p.carb} T${p.fat} /100 g${p.pack?` · opak. ${p.pack} g`:""}</div>
+      </div><div class="row" style="gap:6px">
+        <button class="pill ${p.excluded?"on":""}" data-excl="${p.id}">${p.excluded?"nie jem":"jem"}</button>
+        <button class="btn ghost sm" data-prod="${p.id}">Edytuj</button></div></div>`;
+    });
+    html += `</div></div>`;
+  });
+  const wrap = document.getElementById("prodList");
+  wrap.innerHTML = html || `<div class="empty"><h3>Brak produktu</h3><p class="small">Zeskanuj etykietę albo dodaj ręcznie.</p></div>`;
+  wrap.querySelectorAll("[data-prod]").forEach(b=> b.onclick=()=>prodSheet(b.dataset.prod));
+  wrap.querySelectorAll("[data-excl]").forEach(b=> b.onclick=()=>{
+    const p=P(b.dataset.excl); p.excluded=!p.excluded; save(); renderProducts(); });
+}
+
+/* ---------- arkusze ---------- */
+function openSheet(html){ document.getElementById("sheetInner").innerHTML=html;
+  document.getElementById("sheet").classList.add("on"); }
+function closeSheet(){ document.getElementById("sheet").classList.remove("on"); }
+document.getElementById("sheet").addEventListener("click", e=>{ if(e.target.id==="sheet") closeSheet(); });
+
+function prodSheet(id, prefill){
+  const p = id ? P(id) : Object.assign({id:null,name:"",kcal:0,prot:0,carb:0,fat:0,cat:"inne",piece:null,pack:null}, prefill||{});
+  openSheet(`
+    <h3>${id?"Edytuj produkt":"Nowy produkt"}</h3>
+    <label class="fld"><span>Nazwa</span><input type="text" id="pName" value="${esc(p.name||"")}"></label>
+    <div class="grid2">
+      <label class="fld"><span>kcal / 100 g</span><input type="number" id="pKcal" value="${p.kcal||0}"></label>
+      <label class="fld"><span>Białko / 100 g</span><input type="number" step="0.1" id="pProt" value="${p.prot||0}"></label>
+      <label class="fld"><span>Węgle / 100 g</span><input type="number" step="0.1" id="pCarb" value="${p.carb||0}"></label>
+      <label class="fld"><span>Tłuszcz / 100 g</span><input type="number" step="0.1" id="pFat" value="${p.fat||0}"></label>
+    </div>
+    <div class="grid3">
+      <label class="fld"><span>Kategoria</span><select id="pCat">${CATS.map(c=>`<option ${c===p.cat?"selected":""}>${c}</option>`).join("")}</select></label>
+      <label class="fld"><span>1 sztuka (g)</span><input type="number" id="pPiece" value="${p.piece||""}"></label>
+      <label class="fld"><span>Opakowanie (g)</span><input type="number" id="pPack" value="${p.pack||""}"></label>
+    </div>
+    <div class="row" style="gap:8px;margin-top:6px">
+      <button class="btn primary" id="pSave" style="flex:1">Zapisz</button>
+      ${id?`<button class="btn ghost" id="pDel">Usuń</button>`:""}
+      <button class="btn ghost" id="pCancel">Anuluj</button>
+    </div>`);
+  document.getElementById("pCancel").onclick = closeSheet;
+  document.getElementById("pSave").onclick = ()=>{
+    const v = {name:document.getElementById("pName").value.trim(),
+      kcal:+document.getElementById("pKcal").value||0, prot:+document.getElementById("pProt").value||0,
+      carb:+document.getElementById("pCarb").value||0, fat:+document.getElementById("pFat").value||0,
+      cat:document.getElementById("pCat").value,
+      piece:+document.getElementById("pPiece").value||null, pack:+document.getElementById("pPack").value||null};
+    if(!v.name){ toast("Produkt potrzebuje nazwy."); return; }
+    if(id) Object.assign(P(id), v); else S.products.push(Object.assign({id:uid(),excluded:false,source:"własne"}, v));
+    save(); closeSheet(); renderProducts(); toast("Zapisane.");
+  };
+  if(id) document.getElementById("pDel").onclick = ()=>{
+    if(S.meals.some(m=>m.ings.some(i=>i.pid===id)) && !confirm("Produkt jest w przepisach. Usunąć?")) return;
+    S.products = S.products.filter(x=>x.id!==id); save(); closeSheet(); renderProducts();
+  };
+}
+
+function mealSheet(id){
+  const src = id ? S.meals.find(x=>x.id===id) : {id:null,name:"",slot:"l",rating:3,time:20,tags:[],ings:[]};
+  const d = JSON.parse(JSON.stringify(src));
+  const ROLES = [["kotwica","kotwica"],["bufor","bufor"],["staly","stałe"]];
+  const body = ()=>{
+    const mm = sumMacro(d.ings);
+    return `<h3>${id?"Edytuj danie":"Nowe danie"}</h3>
+    <label class="fld"><span>Nazwa</span><input type="text" id="mName" value="${esc(d.name)}"></label>
+    <div class="grid3">
+      <label class="fld"><span>Pora</span><select id="mSlot">${SLOTS.map(s=>`<option value="${s.id}" ${s.id===d.slot?"selected":""}>${s.name}</option>`).join("")}</select></label>
+      <label class="fld"><span>Ocena</span><input type="number" min="1" max="5" id="mRate" value="${d.rating}"></label>
+      <label class="fld"><span>Czas (min)</span><input type="number" id="mTime" value="${d.time||20}"></label>
+    </div>
+    <div class="eyebrow">Składniki</div>
+    <p class="tiny muted" style="margin:4px 0 8px">Kotwica trzyma gramaturę (mięso, jajka, ryż, całe opakowanie). Bufor przelicza się swobodnie. Stałe nigdy się nie zmienia.</p>
+    ${d.ings.map((i,idx)=>{ const p=P(i.pid);
+      return `<div class="item"><div style="flex:1">
+        <div class="t small">${p?esc(p.name):"—"}</div>
+        <div class="row" style="gap:6px;margin-top:4px">
+          <select data-role="${idx}" style="width:auto;padding:4px 6px;font-size:12px">
+            ${ROLES.map(r=>`<option value="${r[0]}" ${i.role===r[0]?"selected":""}>${r[1]}</option>`).join("")}</select>
+          <input type="number" data-min="${idx}" value="${i.min??""}" placeholder="min" style="width:64px;padding:4px 6px;font-size:12px">
+          <input type="number" data-max="${idx}" value="${i.max??""}" placeholder="max" style="width:64px;padding:4px 6px;font-size:12px">
+        </div></div>
+        <input type="number" data-g="${idx}" value="${i.g}" style="width:76px;text-align:right">
+        <button class="btn ghost sm" data-rm="${idx}">×</button></div>`;}).join("")}
+    <div class="row" style="gap:8px;margin-top:10px">
+      <select id="addPid" style="flex:1">${S.products.slice().sort((a,b)=>a.name.localeCompare(b.name,"pl")).map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("")}</select>
+      <button class="btn ghost sm" id="addIng">Dodaj</button>
+    </div>
+    <p class="small num" style="margin:12px 0 4px"><b>${Math.round(mm.kcal)} kcal</b> · B ${Math.round(mm.prot)} · W ${Math.round(mm.carb)} · T ${Math.round(mm.fat)}</p>
+    <div class="row" style="gap:8px;margin-top:8px">
+      <button class="btn primary" id="mSave" style="flex:1">Zapisz</button>
+      ${id?`<button class="btn ghost" id="mDel">Usuń</button>`:""}
+      <button class="btn ghost" id="mCancel">Anuluj</button>
+    </div>`;
+  };
+  const bind = ()=>{
+    document.getElementById("sheetInner").innerHTML = body();
+    const grab = ()=>{ d.name=document.getElementById("mName").value; d.slot=document.getElementById("mSlot").value;
+      d.rating=Math.min(5,Math.max(1,+document.getElementById("mRate").value||3));
+      d.time=+document.getElementById("mTime").value||20; };
+    document.querySelectorAll("[data-g]").forEach(i=> i.onchange=()=>{ grab(); d.ings[+i.dataset.g].g=Math.max(1,+i.value||1); bind(); });
+    document.querySelectorAll("[data-role]").forEach(i=> i.onchange=()=>{ grab(); d.ings[+i.dataset.role].role=i.value; bind(); });
+    document.querySelectorAll("[data-min]").forEach(i=> i.onchange=()=>{ grab(); d.ings[+i.dataset.min].min=+i.value||null; });
+    document.querySelectorAll("[data-max]").forEach(i=> i.onchange=()=>{ grab(); d.ings[+i.dataset.max].max=+i.value||null; });
+    document.querySelectorAll("[data-rm]").forEach(b=> b.onclick=()=>{ grab(); d.ings.splice(+b.dataset.rm,1); bind(); });
+    document.getElementById("addIng").onclick = ()=>{ grab();
+      d.ings.push({pid:document.getElementById("addPid").value, g:100, role:"bufor", min:null, max:null}); bind(); };
+    document.getElementById("mCancel").onclick = closeSheet;
+    document.getElementById("mSave").onclick = ()=>{
+      grab();
+      if(!d.name.trim()){ toast("Danie potrzebuje nazwy."); return; }
+      if(!d.ings.length){ toast("Dodaj składniki."); return; }
+      if(id) Object.assign(S.meals.find(x=>x.id===id), d); else { d.id=uid(); S.meals.push(d); }
+      save(); closeSheet(); renderMeals(); toast("Zapisane.");
+    };
+    if(id) document.getElementById("mDel").onclick = ()=>{
+      if(!confirm("Usunąć to danie?")) return;
+      S.meals = S.meals.filter(x=>x.id!==id); save(); closeSheet(); renderMeals(); };
+  };
+  openSheet(""); bind();
+}
+
+/* ---------- skaner ---------- */
+function scanSheet(){
+  openSheet(`
+    <h3>Nowy produkt</h3>
+    <p class="small muted">Zeskanuj kod kreskowy albo zrób zdjęcie tabeli wartości odżywczych.</p>
+    <div class="row" style="gap:8px;flex-wrap:wrap">
+      <button class="btn primary sm" id="scCam">Kod kreskowy</button>
+      <button class="btn primary sm" id="scPhoto">Zdjęcie etykiety</button>
+      <button class="btn ghost sm" id="scManual">Wpisz kod</button>
+    </div>
+    <div id="scArea" style="margin-top:12px"></div>
+    <input type="file" id="scFile" accept="image/*" capture="environment" style="display:none">
+    <button class="btn ghost" id="scClose" style="width:100%;margin-top:14px">Zamknij</button>`);
+  document.getElementById("scClose").onclick = ()=>{ stopCam(); closeSheet(); };
+  document.getElementById("scManual").onclick = ()=>{ const c=prompt("Kod kreskowy:"); if(c) offLookup(c.trim()); };
+  document.getElementById("scPhoto").onclick = ()=> document.getElementById("scFile").click();
+  document.getElementById("scFile").onchange = e=>{ const f=e.target.files[0]; if(f) readLabel(f); };
+  document.getElementById("scCam").onclick = startCam;
+}
+let camStream=null, camTimer=null;
+function stopCam(){ if(camTimer) clearInterval(camTimer); camTimer=null;
+  if(camStream){ camStream.getTracks().forEach(t=>t.stop()); camStream=null; } }
+async function startCam(){
+  const area = document.getElementById("scArea");
+  if(!("BarcodeDetector" in window)){
+    area.innerHTML = `<p class="small">Ta przeglądarka nie czyta kodów. Użyj „Wpisz kod” albo zdjęcia etykiety.</p>`;
+    return;
+  }
+  try{
+    camStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
+    area.innerHTML = `<video id="scVid" playsinline autoplay muted></video><p class="tiny muted">Skieruj na kod kreskowy.</p>`;
+    const v = document.getElementById("scVid"); v.srcObject = camStream; await v.play();
+    const det = new BarcodeDetector({formats:["ean_13","ean_8","upc_a","upc_e"]});
+    camTimer = setInterval(async ()=>{
+      try{ const codes = await det.detect(v);
+        if(codes.length){ stopCam(); offLookup(codes[0].rawValue); } }catch(e){}
+    }, 400);
+  }catch(e){ area.innerHTML = `<p class="small">Brak dostępu do aparatu. Użyj zdjęcia etykiety.</p>`; }
+}
+async function offLookup(code){
+  const area = document.getElementById("scArea");
+  if(area) area.innerHTML = `<p class="small"><span class="spin"></span>Szukam ${esc(code)}…</p>`;
+  try{
+    const r = await fetch(`https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,brands,nutriments,quantity`);
+    const d = await r.json();
+    const p = d.product; if(!p) throw 0;
+    const n = p.nutriments||{};
+    const kcal = Math.round(n["energy-kcal_100g"] ?? (n.energy_100g ? n.energy_100g/4.184 : 0));
+    if(!kcal) throw 0;
+    closeSheet();
+    prodSheet(null, {name:(p.product_name||"produkt")+(p.brands?` (${p.brands.split(",")[0].trim()})`:""),
+      kcal, prot:r1(n.proteins_100g), carb:r1(n.carbohydrates_100g), fat:r1(n.fat_100g),
+      pack:(String(p.quantity||"").match(/(\d+)\s*g/)||[])[1] || null});
+    toast("Sprawdź wartości i zapisz.");
+  }catch(e){
+    if(area) area.innerHTML = `<p class="small">Nie ma tego kodu w bazie. Zrób zdjęcie etykiety — Claude ją odczyta.</p>`;
+  }
+}
+function readLabel(file){
+  const area = document.getElementById("scArea");
+  if(!S.ai.url){ if(area) area.innerHTML=`<p class="small">Najpierw podłącz AI w Ustawieniach.</p>`; return; }
+  if(area) area.innerHTML = `<p class="small"><span class="spin"></span>Claude czyta etykietę…</p>`;
+  const rd = new FileReader();
+  rd.onload = async ()=>{
+    try{
+      const b64 = rd.result.split(",")[1];
+      const mime = (file.type && file.type.startsWith("image/")) ? file.type : "image/jpeg";
+      const p = await aiLabel(b64, mime);
+      closeSheet();
+      prodSheet(null, {name:p.name||"", kcal:Math.round(p.kcal||0), prot:r1(p.prot), carb:r1(p.carb),
+                       fat:r1(p.fat), cat:CATS.includes(p.cat)?p.cat:"inne", piece:p.piece||null, pack:p.pack||null});
+      toast("Odczytane — sprawdź i zapisz.");
+    }catch(e){ if(area) area.innerHTML = `<p class="small">Nie udało się odczytać (${esc(e.message||"błąd")}). Spróbuj ostrzejszego zdjęcia albo wpisz ręcznie.</p>`; }
+  };
+  rd.readAsDataURL(file);
+}
+
+/* ---------- AI: nowe przepisy ---------- */
+function aiMealSheet(){
+  openSheet(`
+    <h3>Nowe przepisy od Claude'a</h3>
+    <p class="small muted">Napisz, czego szukasz. Claude ułoży przepisy z Twoich produktów i sam ustawi kotwice.</p>
+    <label class="fld"><span>Czego szukam</span>
+      <textarea id="aiWish" rows="3" placeholder="np. 3 szybkie azjatyckie obiady z kurczakiem i ryżem"></textarea></label>
+    <div class="row" style="gap:8px">
+      <button class="btn primary" id="aiGo" style="flex:1">Wygeneruj</button>
+      <button class="btn ghost" id="aiCancel">Anuluj</button>
+    </div>
+    <div id="aiOut" style="margin-top:12px"></div>`);
+  document.getElementById("aiCancel").onclick = closeSheet;
+  document.getElementById("aiGo").onclick = async ()=>{
+    const wish = document.getElementById("aiWish").value.trim();
+    if(!wish){ toast("Napisz, czego szukasz."); return; }
+    const out = document.getElementById("aiOut");
+    out.innerHTML = `<p class="small"><span class="spin"></span>Claude pracuje…</p>`;
+    try{
+      const data = await aiRecipes(wish);
+      const n = mergePack({pack:true, meals:data.meals||[], products:[]});
+      out.innerHTML = `<p class="small">Dodane: ${n} dań.</p>`;
+      renderMeals();
+    }catch(e){ out.innerHTML = `<p class="small">Nie wyszło: ${esc(e.message||"błąd")}</p>`; }
+  };
+}
+
+/* ==========================================================================
+   ZAKUPY
+   ========================================================================== */
+function renderShopSelectors(){
+  const from=document.getElementById("shopFrom"), to=document.getElementById("shopTo");
+  const days = Object.keys(S.plan).sort();
+  if(!days.length){ from.innerHTML = to.innerHTML = `<option value="">brak planu</option>`; return; }
+  const opts = days.map(d=>`<option value="${d}">${plDay(d)}</option>`).join("");
+  const fv=from.value, tv=to.value;
+  from.innerHTML=opts; to.innerHTML=opts;
+  from.value = days.includes(fv)?fv:days[0];
+  to.value   = days.includes(tv)?tv:days[Math.min(6,days.length-1)];
+}
+function buildShopping(){
+  const from=document.getElementById("shopFrom").value, to=document.getElementById("shopTo").value;
+  const wrap=document.getElementById("shopList");
+  if(!from||!to){ wrap.innerHTML=`<div class="empty"><p>Najpierw ułóż tydzień.</p></div>`; return; }
+  const tot={};
+  Object.keys(S.plan).filter(d=>d>=from&&d<=to).forEach(d=>{
+    dayIngs(S.plan[d]).forEach(i=> tot[i.pid]=(tot[i.pid]||0)+i.g); });
+  let html="";
+  CATS.forEach(c=>{
+    const rows = Object.keys(tot).map(id=>P(id)).filter(p=>p&&p.cat===c);
+    if(!rows.length) return;
+    html += `<div class="card"><div class="eyebrow">${c}</div><div style="margin-top:6px">`;
+    rows.sort((a,b)=>a.name.localeCompare(b.name,"pl")).forEach(p=>{
+      const g=Math.round(tot[p.id]);
+      let amount = g>=1000 ? (g/1000).toFixed(2)+" kg" : g+" g";
+      if(p.pack) amount = `${Math.ceil(g/p.pack)} × opak. (${amount})`;
+      else if(p.piece) amount = `${Math.ceil(g/p.piece)} szt (${amount})`;
+      const done=!!S.shopChecked[p.id];
+      html += `<div class="item ${done?"done":""}">
+        <label class="row" style="gap:10px;flex:1"><input type="checkbox" class="chk" data-shop="${p.id}" ${done?"checked":""}>
+          <span class="t">${esc(p.name)}</span></label>
+        <span class="num small">${amount}</span></div>`;
+    });
+    html += `</div></div>`;
+  });
+  wrap.innerHTML = html || `<div class="empty"><p>Nic do kupienia w tym zakresie.</p></div>`;
+  wrap.querySelectorAll("[data-shop]").forEach(cb=> cb.onchange=()=>{
+    S.shopChecked[cb.dataset.shop]=cb.checked; save(); buildShopping(); });
+}
+
+/* ==========================================================================
+   USTAWIENIA / IMPORT
+   ========================================================================== */
+function renderSettings(){
+  const g=id=>document.getElementById(id);
+  g("sKcal").value=S.settings.kcal; g("sProt").value=S.settings.prot; g("sFat").value=S.settings.fat;
+  g("sCarb").value=targetCarb();
+  g("sB").value=S.settings.split.b; g("sL").value=S.settings.split.l; g("sD").value=S.settings.split.d;
+  g("aiUrl").value=S.ai.url||""; g("aiSecret").value=S.ai.secret||"";
+  const sum=S.settings.split.b+S.settings.split.l+S.settings.split.d;
+  g("splitInfo").textContent = sum===100
+    ? `Podział podpowiada, które dania pasują do której pory. Bilans i tak liczony jest na cały dzień.`
+    : `Suma to ${sum}% — popraw, żeby wyszło 100%.`;
+  let ok="pamięć działa";
+  try{ localStorage.setItem("__t","1"); localStorage.removeItem("__t"); }catch(e){ ok="brak zapisu — dane znikną po zamknięciu"; }
+  g("storeInfo").textContent = `${S.products.length} produktów · ${S.meals.length} dań · ${Object.keys(S.plan).length} dni w planie · ${(S.log||[]).length} wpisów historii · ${ok}`;
+}
+function bindSettings(){
+  ["sKcal","sProt","sFat","sB","sL","sD"].forEach(id=>{
+    document.getElementById(id).onchange = ()=>{
+      const g=x=>+document.getElementById(x).value;
+      S.settings.kcal=g("sKcal")||2400; S.settings.prot=g("sProt")||170; S.settings.fat=g("sFat")||75;
+      S.settings.split={b:g("sB")||30,l:g("sL")||38,d:g("sD")||32};
+      save(); renderSettings(); renderBalance(); };
+  });
+  ["aiUrl","aiSecret"].forEach(id=>{
+    document.getElementById(id).onchange = ()=>{
+      S.ai.url=document.getElementById("aiUrl").value.trim().replace(/\/$/,"");
+      S.ai.secret=document.getElementById("aiSecret").value.trim(); save(); };
+  });
+  document.getElementById("btnAiTest").onclick = async ()=>{
+    const st=document.getElementById("aiStatus");
+    S.ai.url=document.getElementById("aiUrl").value.trim().replace(/\/$/,"");
+    S.ai.secret=document.getElementById("aiSecret").value.trim(); save();
+    st.innerHTML=`<span class="spin"></span>sprawdzam…`;
+    try{ const t = await aiCall({model:"claude-sonnet-5", max_tokens:20, messages:[{role:"user",content:"Odpowiedz jednym słowem: działa"}]});
+      st.textContent = "✓ "+t.trim().slice(0,40); st.style.color="var(--ok)";
+    }catch(e){ st.textContent = "✗ "+(e.message||"błąd"); st.style.color="var(--alert)"; }
+  };
+  document.getElementById("btnExport").onclick = ()=>{
+    const b=new Blob([JSON.stringify(S,null,1)],{type:"application/json"});
+    const a=document.createElement("a"); a.href=URL.createObjectURL(b);
+    a.download=`jadlospis-${todayISO()}.json`; a.click(); URL.revokeObjectURL(a.href);
+  };
+  document.getElementById("btnImport").onclick = ()=> document.getElementById("fileIn").click();
+  document.getElementById("fileIn").onchange = e=>{
+    const f=e.target.files[0]; if(!f) return;
+    const r=new FileReader();
+    r.onload = ()=>{ try{
+        const d=JSON.parse(r.result);
+        if(d.pack){ const n=mergePack(d); renderAll(); toast(`Wczytane: ${n} dań.`); return; }
+        if(!d.products||!d.meals) throw 0;
+        S=d; S.ai=S.ai||{url:"",secret:""}; S.log=S.log||[]; save(); renderAll(); toast("Kopia wczytana.");
+      }catch(err){ toast("To nie jest plik z tej aplikacji."); } };
+    r.readAsText(f); e.target.value="";
+  };
+  document.getElementById("btnReset").onclick = ()=>{
+    if(!confirm("Skasuje produkty, dania i plan. Na pewno?")) return;
+    const ai=S.ai; S=emptyState(); S.ai=ai; save(); renderAll(); toast("Wyczyszczone.");
+  };
+}
+
+function mergePack(d){
+  const key = s=>String(s).toLowerCase().trim();
+  const byName={}; S.products.forEach(p=>byName[key(p.name)]=p.id);
+  (d.products||[]).forEach(p=>{
+    if(byName[key(p.name)]) return;
+    const id=uid();
+    S.products.push({id, name:p.name, kcal:+p.kcal||0, prot:+p.prot||0, carb:+p.carb||0, fat:+p.fat||0,
+      cat:CATS.includes(p.cat)?p.cat:"inne", piece:p.piece||null, pack:p.pack||null, excluded:false, source:"paczka"});
+    byName[key(p.name)]=id;
+  });
+  const have=new Set(S.meals.map(m=>key(m.name)));
+  let added=0;
+  (d.meals||[]).forEach(m=>{
+    if(have.has(key(m.name))) return;
+    const ings=(m.ings||[]).map(i=>{
+      const pid = byName[key(i.p!==undefined?i.p:i.name)];
+      if(!pid || !(+i.g>0)) return null;
+      const role = ["kotwica","bufor","staly"].includes(i.role)?i.role:"bufor";
+      return {pid, g:+i.g, role,
+        min: +i.min || (role==="staly" ? +i.g : (role==="kotwica" ? +i.g : Math.max(3,Math.round(i.g*0.4)))),
+        max: +i.max || (role==="staly" ? +i.g : (role==="kotwica" ? +i.g : Math.min(600,Math.round(i.g*2.5))))};
+    }).filter(Boolean);
+    if(!ings.length) return;
+    S.meals.push({id:uid(), name:m.name, slot:SLOTS.some(s=>s.id===m.slot)?m.slot:"l",
+      rating:Math.min(5,Math.max(1,+m.rating||3)), time:+m.time||20, tags:m.tags||[], ings});
+    have.add(key(m.name)); added++;
+  });
+  if(d.settings){
+    const t=d.settings;
+    if(t.kcal) S.settings.kcal=+t.kcal; if(t.prot) S.settings.prot=+t.prot; if(t.fat) S.settings.fat=+t.fat;
+    if(t.split) S.settings.split=t.split; if(t.rules) S.settings.rules=t.rules;
+  }
+  save(); return added;
+}
+
+/* ---------- drobiazgi ---------- */
+let toastT;
+function toast(msg){ const t=document.getElementById("toast"); t.textContent=msg; t.classList.add("on");
+  clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("on"),2600); }
+function busy(on,msg){ const b=document.getElementById("btnGen");
+  b.disabled=on; b.innerHTML = on ? `<span class="spin"></span>` : "Ułóż tydzień";
+  if(on&&msg) toast(msg); }
+
+const TITLES={week:"Tydzień",meals:"Posiłki",prod:"Produkty",shop:"Zakupy",set:"Ustawienia"};
+function go(v){
+  document.querySelectorAll(".view").forEach(s=>s.classList.toggle("on", s.id==="v-"+v));
+  document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on", b.dataset.v===v));
+  document.getElementById("hTitle").textContent=TITLES[v];
+  if(v==="meals") renderMeals();
+  if(v==="prod") renderProducts();
+  if(v==="shop"){ renderShopSelectors(); buildShopping(); }
+  if(v==="set") renderSettings();
+  window.scrollTo(0,0);
+}
+function renderAll(){ renderWeek(); renderShopSelectors(); renderSettings(); }
+
+/* ---------- start ---------- */
+load();
+document.querySelectorAll("nav button").forEach(b=> b.onclick=()=>go(b.dataset.v));
+document.getElementById("btnGen").onclick = generateWeek;
+document.getElementById("weekStart").onchange = e=>{ S.weekStart=e.target.value; save(); renderWeek(); };
+document.getElementById("btnNewMeal").onclick = ()=> mealSheet(null);
+document.getElementById("btnNewProd").onclick = ()=> prodSheet(null);
+document.getElementById("btnScan").onclick = scanSheet;
+document.getElementById("btnAiMeal").onclick = aiMealSheet;
+document.getElementById("mealSearch").oninput = renderMeals;
+document.getElementById("prodSearch").oninput = renderProducts;
+document.getElementById("btnShop").onclick = buildShopping;
+bindSettings();
+renderAll();
+if(!S.meals.length) toast("Ustawienia → Wczytaj kopię / paczkę → baza-startowa.json");
+if("serviceWorker" in navigator && location.protocol.startsWith("http"))
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>
