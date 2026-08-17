@@ -108,6 +108,16 @@ label.fld > span{display:block;font-size:12px;color:var(--muted);margin-bottom:4
 .hfilter button{font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid var(--line);
   background:var(--surface);cursor:pointer;color:var(--muted)}
 .hfilter button.on{border-color:var(--berry);color:var(--berry);background:#F6E9F0}
+.rmbtn{border:1px solid var(--line);background:var(--surface);border-radius:6px;width:26px;height:30px;
+  padding:0;font-size:16px;line-height:1;color:var(--muted);cursor:pointer;flex:none}
+.rmbtn:active{border-color:#8C3A3A;color:#8C3A3A}
+.addrow{display:flex;gap:6px;align-items:center;margin-top:8px}
+.addrow select{flex:1;padding:6px 8px;font-size:13px}
+.swap{border-top:1px solid var(--line);padding:10px 0}
+.swap:first-of-type{border-top:0}
+.swap.cur{opacity:.6}
+.swap .hd{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.swap .dv{font-family:var(--mono);font-size:12px;color:var(--muted);margin:3px 0 6px}
 details summary{cursor:pointer;font-size:13px;color:var(--berry);font-weight:600;list-style:none}
 details summary::-webkit-details-marker{display:none}
 details summary::before{content:"+ "} details[open] summary::before{content:"– "}
@@ -587,6 +597,59 @@ async function generateWeek(){
   toast(viaAI ? "Tydzień ułożony przez Claude'a." : "Tydzień ułożony.");
 }
 
+/* Czy dzień da się jeszcze doregulować do celu, jeśli w tym miejscu wstawimy dane danie?
+   Bierze pod uwagę faktyczny stan dnia: zjedzone i zablokowane liczą się jako sztywne. */
+/* Nowy składnik w konkretnym dniu — nie rusza przepisu, tylko ten jeden posiłek. */
+function addIngToPlan(iso, slotId, pid){
+  const e = S.plan[iso] && S.plan[iso][slotId]; if(!e) return;
+  const pr = P(pid); if(!pr) return;
+  if(e.ings.some(i=>i.pid===pid)){ toast("Ten składnik już tam jest."); return; }
+  const tlusty = pr.cat==="tłuszcze i orzechy";
+  const g   = tlusty ? 10 : 50;
+  const min = tlusty ? 3  : 10;
+  const max = tlusty ? 30 : 250;
+  e.ings.push({pid, g, base:g, role:"bufor", min, max, locked:false, pref:false});
+  rebalance(iso); renderWeek(); renderBalance();
+  toast(`Dodane: ${pr.name}`);
+}
+function rmIngFromPlan(iso, slotId, idx){
+  const e = S.plan[iso] && S.plan[iso][slotId]; if(!e) return;
+  const pr = P(e.ings[idx] && e.ings[idx].pid);
+  if(e.ings.length<=1){ toast("Posiłek musi mieć co najmniej jeden składnik."); return; }
+  e.ings.splice(idx,1);
+  rebalance(iso); renderWeek(); renderBalance();
+  toast(`Usunięte: ${pr?pr.name:"składnik"}`);
+}
+
+function fitAfterSwap(iso, slotId, meal){
+  const day = S.plan[iso]; if(!day) return null;
+  const fl={kcal:0,prot:0,carb:0,fat:0}, ce={kcal:0,prot:0,carb:0,fat:0};
+  const add = (pid, lo, hi)=>{
+    const pr = P(pid); if(!pr) return; const u = per(pr);
+    fl.kcal+=u.k*lo; fl.prot+=u.p*lo; fl.carb+=u.c*lo; fl.fat+=u.f*lo;
+    ce.kcal+=u.k*hi; ce.prot+=u.p*hi; ce.carb+=u.c*hi; ce.fat+=u.f*hi;
+  };
+  SLOTS.forEach(sx=>{
+    if(sx.id === slotId){
+      meal.ings.forEach(i=>{
+        const sztywny = i.role==="staly";
+        add(i.pid, sztywny ? i.g : (i.min ?? i.g), sztywny ? i.g : (i.max ?? i.g));
+      });
+      return;
+    }
+    const e = day[sx.id]; if(!e) return;
+    e.ings.forEach(i=>{
+      const sztywny = e.eaten || i.locked || i.role==="staly";
+      add(i.pid, sztywny ? i.g : (i.min ?? i.g), sztywny ? i.g : (i.max ?? i.g));
+    });
+  });
+  const t = dayTarget();
+  const d = (lo,hi,x)=> x<lo ? lo-x : (x>hi ? x-hi : 0);
+  const score = d(fl.kcal,ce.kcal,t.kcal)/9 + 1.4*d(fl.prot,ce.prot,t.prot)
+              + 0.45*d(fl.carb,ce.carb,t.carb) + 0.9*d(fl.fat,ce.fat,t.fat);
+  return {score, ok: score < 0.5};
+}
+
 /* ==========================================================================
    SCHOWEK — kopiowanie posiłków i całych dni
    ========================================================================== */
@@ -702,15 +765,78 @@ function renderHistory(){
     copyDay(b.dataset.histcopy); closeSheet(); });
 }
 
+function applySwap(iso, slotId, mealId){
+  const day = S.plan[iso]; if(!day) return;
+  const meal = S.meals.find(m=>m.id===mealId); if(!meal) return;
+  const stare = day[slotId] && S.meals.find(m=>m.id===day[slotId].recipeId);
+  day[slotId] = {recipeId:meal.id, ings:ingsFromMeal(meal)};
+  logAdd(iso, slotId, stare?stare.name:"?", "zamienione");
+  solveDay(day, dayTarget()); save(); closeSheet(); renderWeek(); renderBalance();
+  toast(`Wstawione: ${meal.name}`);
+}
+
+let swapQuery = "", swapAll = false;
 function rerollMeal(iso, slotId){
   const day = S.plan[iso]; if(!day||!day[slotId]) return;
-  const pool = candidates(slotId, dowOf(iso)).filter(m=>m.id!==day[slotId].recipeId);
-  if(!pool.length){ toast("Brak innego dania na tę porę."); return; }
-  const old = S.meals.find(m=>m.id===day[slotId].recipeId);
-  const pick = pool[Math.floor(Math.random()*pool.length)];
-  day[slotId] = {recipeId:pick.id, ings:ingsFromMeal(pick)};
-  logAdd(iso, slotId, old?old.name:"?", "zamienione");
-  solveDay(day, dayTarget()); save(); renderWeek();
+  swapQuery = ""; swapAll = false;
+  renderSwap(iso, slotId);
+}
+function renderSwap(iso, slotId){
+  const day = S.plan[iso];
+  const teraz = day[slotId] ? day[slotId].recipeId : null;
+  const slotName = (SLOTS.find(s=>s.id===slotId)||{}).name || "";
+  const q = swapQuery.toLowerCase().trim();
+  let lista = S.meals.filter(m => swapAll || m.slot===slotId);
+  if(q) lista = lista.filter(m => m.name.toLowerCase().includes(q));
+  lista = lista.map(m=>{
+    const mm = sumMacro(m.ings.map(i=>({pid:i.pid,g:i.g})));
+    const fit = fitAfterSwap(iso, slotId, m);
+    return {m, mm, fit};
+  }).sort((a,b)=>
+      (b.fit.ok?1:0)-(a.fit.ok?1:0) || (b.m.rating||3)-(a.m.rating||3)
+      || a.m.name.localeCompare(b.m.name,"pl"));
+
+  const body = lista.length ? lista.map(({m,mm,fit})=>`
+    <div class="swap ${m.id===teraz?"cur":""}">
+      <div class="hd">
+        <strong>${esc(m.name)}</strong>
+        <span class="score ${fit.ok?"a":"b"}">${fit.ok?"pasuje":"naciągnie dzień"}</span>
+      </div>
+      <div class="dv">${Math.round(mm.kcal)} kcal · B${Math.round(mm.prot)} · W${Math.round(mm.carb)} · T${Math.round(mm.fat)}
+        · ${"★".repeat(m.rating||3)} · ${m.time||20} min${m.slot!==slotId?` · <em>${(SLOTS.find(s=>s.id===m.slot)||{}).name}</em>`:""}</div>
+      ${m.id===teraz ? `<span class="tiny muted">teraz w planie</span>`
+                     : `<button class="btn ghost sm" data-swap="${m.id}">Wstaw</button>`}
+    </div>`).join("") : `<div class="empty"><p class="small">Nic nie pasuje do wyszukiwania.</p></div>`;
+
+  openSheet(`
+    <h3>Zamień — ${esc(slotName)}, ${plDay(iso)}</h3>
+    <input type="text" id="swapQ" placeholder="Szukaj dania" value="${esc(swapQuery)}" style="margin-top:8px">
+    <div class="row small muted" style="gap:12px;margin:8px 0 2px;flex-wrap:wrap">
+      <label class="row" style="gap:6px"><input type="checkbox" id="swapAll" class="chk" ${swapAll?"checked":""}> dania z innych pór dnia</label>
+      <button class="btn ghost sm" id="swapRand">Losuj za mnie</button>
+    </div>
+    <p class="tiny muted" style="margin:6px 0 0">„Pasuje" = dzień da się jeszcze doregulować do celu; liczone z uwzględnieniem zjedzonych i zablokowanych.</p>
+    <div style="margin-top:6px">${body}</div>
+    <button class="btn ghost" id="swapClose" style="width:100%;margin-top:12px">Zamknij</button>`);
+
+  const inner = document.getElementById("sheetInner");
+  const qi = document.getElementById("swapQ");
+  qi.oninput = ()=>{ swapQuery = qi.value; const pos=qi.selectionStart;
+    renderSwap(iso, slotId);
+    const nq=document.getElementById("swapQ"); nq.focus(); nq.setSelectionRange(pos,pos); };
+  document.getElementById("swapAll").onchange = e=>{ swapAll = e.target.checked; renderSwap(iso, slotId); };
+  document.getElementById("swapClose").onclick = closeSheet;
+  document.getElementById("swapRand").onclick = ()=>{
+    const pula = lista.filter(x=>x.m.id!==teraz);
+    const dobre = pula.filter(x=>x.fit.ok);
+    const src = dobre.length ? dobre : pula;
+    if(!src.length){ toast("Nie ma z czego losować."); return; }
+    const w = src.map(x=>Math.pow(x.m.rating||3,2));
+    let r = Math.random()*w.reduce((a,b)=>a+b,0), pick = src[src.length-1];
+    for(let j=0;j<src.length;j++){ r-=w[j]; if(r<=0){ pick = src[j]; break; } }
+    applySwap(iso, slotId, pick.m.id);
+  };
+  inner.querySelectorAll("[data-swap]").forEach(b=> b.onclick=()=> applySwap(iso, slotId, b.dataset.swap));
 }
 function logAdd(date, slot, name, action){
   S.log = S.log || []; S.log.push({date, slot, name, action});
@@ -853,10 +979,20 @@ function renderWeek(){
                               : `<button class="lockbtn ${ing.locked?"on":""}" data-lock="${iso}|${s.id}|${idx}"
                                    title="${ing.locked?"Zablokowane — kliknij, żeby zwolnić":"Zablokuj tę gramaturę"}"
                                    aria-pressed="${ing.locked?"true":"false"}">${ing.locked?"🔒":"🔓"}</button>`;
+            const rm = e.eaten ? "" :
+              `<button class="rmbtn" data-rming="${iso}|${s.id}|${idx}" title="Usuń składnik z tego posiłku">×</button>`;
             return `<li class="${ing.locked?"locked":""}"><span class="nm">${esc(p.name)}${unit}</span>${tag}
               <input type="number" data-g="${iso}|${s.id}|${idx}" value="${ing.g}" inputmode="numeric">
-              ${btn}</li>`;
+              ${btn}${rm}</li>`;
           }).join("")}</ul>
+          ${e.eaten ? "" : `<div class="addrow">
+            <select data-addsel="${iso}|${s.id}">
+              <option value="">+ dodaj składnik…</option>
+              ${S.products.slice().sort((a,b)=>a.name.localeCompare(b.name,"pl"))
+                 .map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("")}
+            </select>
+            <button class="btn ghost sm" data-addbtn="${iso}|${s.id}">Dodaj</button>
+          </div>`}
           <div class="lockbar">
             <span class="tiny muted">${e.eaten
               ? "Posiłek zjedzony — gramatury zamrożone. Możesz je poprawić na to, co faktycznie zjadłeś; reszta dnia się dopasuje."
@@ -876,6 +1012,14 @@ function renderWeek(){
 
   wrap.querySelectorAll("details[data-key]").forEach(d=>{ if(open.has(d.dataset.key)) d.open = true; });
   if(open.size) window.scrollTo(0, scrollY);
+
+  wrap.querySelectorAll("[data-rming]").forEach(b=> b.onclick=()=>{
+    const [iso,s,idx]=b.dataset.rming.split("|"); rmIngFromPlan(iso,s,+idx); });
+  wrap.querySelectorAll("[data-addbtn]").forEach(b=> b.onclick=()=>{
+    const [iso,s]=b.dataset.addbtn.split("|");
+    const sel = wrap.querySelector(`[data-addsel="${iso}|${s}"]`);
+    if(!sel || !sel.value){ toast("Najpierw wybierz produkt z listy."); return; }
+    addIngToPlan(iso, s, sel.value); });
 
   wrap.querySelectorAll("[data-copymeal]").forEach(b=> b.onclick=()=>{
     const [iso,s]=b.dataset.copymeal.split("|"); copyMeal(iso,s); });
