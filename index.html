@@ -69,6 +69,23 @@ label.fld > span{display:block;font-size:12px;color:var(--muted);margin-bottom:4
 :focus-visible{outline:2px solid var(--berry);outline-offset:2px}
 
 .day{margin-bottom:18px}
+.daytile{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+  margin-bottom:10px;overflow:hidden}
+.daytile.open{border-color:var(--berry);box-shadow:0 1px 0 rgba(110,30,70,.06)}
+.daytile.today{border-left:3px solid var(--berry)}
+.tilehead{display:flex;justify-content:space-between;align-items:center;gap:10px;width:100%;
+  background:none;border:0;text-align:left;padding:13px 14px;cursor:pointer;font:inherit;color:inherit}
+.tilehead .d{font-family:var(--display);font-weight:800;font-size:16.5px;display:block}
+.tilehead .sub{display:block;font-size:12px;color:var(--muted);margin-top:2px;line-height:1.35;
+  overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.tilehead .dr{display:flex;align-items:center;gap:9px;flex:none}
+.tilehead .k{font-family:var(--mono);font-size:12.5px;color:var(--muted);white-space:nowrap}
+.tilehead .k.bad{color:var(--alert)}
+.tilehead .chev{color:var(--muted);font-size:12px;width:12px;text-align:center}
+.tilebody{padding:0 10px 10px;border-top:1px solid var(--line)}
+.tilebody .meal{margin-top:8px;margin-bottom:0}
+.todaypill{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--berry);
+  border:1px solid var(--berry);border-radius:999px;padding:1px 5px;margin-left:6px;vertical-align:1px}
 .dayhead{display:flex;justify-content:space-between;align-items:baseline;padding:0 2px 6px}
 .dayhead .d{font-family:var(--display);font-weight:800;font-size:17px}
 .dayhead .k{font-family:var(--mono);font-size:12.5px;color:var(--muted)}
@@ -275,7 +292,7 @@ video{width:100%;border-radius:12px;background:#000}
    i czyta etykiety — nigdy nie liczy gramatury.
    ========================================================================== */
 
-const APP_VER = "rev8 · 17.08.2026";   // widoczne w Ustawieniach — po aktualizacji sprawdź, czy się zgadza
+const APP_VER = "rev9 · 17.08.2026";   // widoczne w Ustawieniach — po aktualizacji sprawdź, czy się zgadza
 const KEY   = "jadlospis.v2";
 const SLOTS = [{id:"b",name:"Śniadanie"},{id:"l",name:"Obiad"},{id:"d",name:"Kolacja"}];
 const CATS  = ["mięso i ryby","nabiał i jaja","zboża i pieczywo","warzywa","owoce","tłuszcze i orzechy","strączki","inne"];
@@ -776,6 +793,7 @@ function applySwap(iso, slotId, mealId){
   toast(`Wstawione: ${meal.name}`);
 }
 
+let openDay = null;      // rozwinięty kafelek dnia; null = wszystkie zwinięte
 let swapQuery = "", swapAll = false;
 function rerollMeal(iso, slotId){
   const day = S.plan[iso]; if(!day||!day[slotId]) return;
@@ -904,7 +922,7 @@ Czego szukam: ${wish}`;
    ========================================================================== */
 function renderBalance(){
   const el = document.getElementById("balance");
-  const iso = todayISO();
+  const iso = (openDay && S.plan[openDay]) ? openDay : todayISO();
   const m = dayMacro(iso) || {kcal:0,prot:0,carb:0,fat:0};
   const t = dayTarget();
   const kP=m.prot*4, kC=m.carb*4, kF=m.fat*9;
@@ -918,12 +936,13 @@ function renderBalance(){
     </div>
     <div class="legend">
       ${m.kcal ? `<span><b class="num">${Math.round(m.kcal)}</b> / ${t.kcal} kcal</span>`
-               : `<span class="muted">Dziś nic nie zaplanowane</span>`}
+               : `<span class="muted">Nic nie zaplanowane</span>`}
       <span><i class="dot" style="background:var(--berry)"></i>B <b>${Math.round(m.prot)}</b>/${t.prot}</span>
       <span><i class="dot" style="background:var(--gold)"></i>W <b>${Math.round(m.carb)}</b>/${t.carb}</span>
       <span><i class="dot" style="background:var(--teal)"></i>T <b>${Math.round(m.fat)}</b>/${t.fat}</span>
     </div>`;
-  document.getElementById("hDate").textContent = plDay(iso);
+  document.getElementById("hDate").textContent =
+    plDay(iso) + (iso===todayISO() ? " · dziś" : "");
 }
 
 function renderWeek(){
@@ -932,6 +951,12 @@ function renderWeek(){
   const scrollY = window.scrollY;
   const start = S.weekStart || todayISO();
   document.getElementById("weekStart").value = start;
+  /* jeden kafelek naraz; domyślnie dzisiejszy, a jak go nie ma — pierwszy z tygodnia */
+  const dniTygodnia = [];
+  for(let i=0;i<7;i++){ const d=addDays(start,i); if(S.plan[d]) dniTygodnia.push(d); }
+  if(!openDay || !dniTygodnia.includes(openDay))
+    openDay = dniTygodnia.includes(todayISO()) ? todayISO() : (dniTygodnia[0] || null);
+
   let html = "", any = false;
   for(let i=0;i<7;i++){
     const iso = addDays(start,i), day = S.plan[iso];
@@ -939,14 +964,33 @@ function renderWeek(){
     any = true;
     const st = dayStatus(iso);
     const clip = S.clip;
-    html += `<div class="day"><div class="dayhead">
-      <span class="d">${plDay(iso)}</span>
-      <span class="k ${st.ok?"":"bad"}">${Math.round(st.m.kcal)} kcal · B${Math.round(st.m.prot)} W${Math.round(st.m.carb)} T${Math.round(st.m.fat)}</span>
-    </div>
-    <div class="daybar">
-      <button class="btn ghost sm" data-copyday="${iso}">Kopiuj dzień</button>
-      ${clip && clip.type==="day" ? `<button class="btn ghost sm" data-pasteday="${iso}">Wklej dzień · ${esc(clip.label)}</button>` : ""}
-    </div>`;
+    const rozwiniety = iso === openDay;
+    const dzis = iso === todayISO();
+    const nazwy = SLOTS.map(sx=>{
+      const e = day[sx.id]; if(!e) return null;
+      const m = S.meals.find(x=>x.id===e.recipeId);
+      return (m ? m.name : "usunięte danie") + (e.eaten ? " ✓" : "");
+    }).filter(Boolean).join(" · ");
+
+    html += `<div class="daytile ${rozwiniety?"open":""} ${dzis?"today":""}">
+      <button class="tilehead" data-tile="${iso}" aria-expanded="${rozwiniety?"true":"false"}">
+        <span class="dl">
+          <span class="d">${plDay(iso)}${dzis?`<span class="todaypill">dziś</span>`:""}</span>
+          <span class="sub">${esc(nazwy)}</span>
+        </span>
+        <span class="dr">
+          <span class="k ${st.ok?"":"bad"}">${Math.round(st.m.kcal)} kcal · B${Math.round(st.m.prot)} W${Math.round(st.m.carb)} T${Math.round(st.m.fat)}</span>
+          <span class="chev">${rozwiniety?"▾":"▸"}</span>
+        </span>
+      </button>`;
+
+    if(!rozwiniety){ html += `</div>`; continue; }
+
+    html += `<div class="tilebody">
+      <div class="daybar">
+        <button class="btn ghost sm" data-copyday="${iso}">Kopiuj dzień</button>
+        ${clip && clip.type==="day" ? `<button class="btn ghost sm" data-pasteday="${iso}">Wklej dzień · ${esc(clip.label)}</button>` : ""}
+      </div>`;
     SLOTS.forEach(s=>{
       const e = day[s.id]; if(!e) return;
       const meal = S.meals.find(m=>m.id===e.recipeId);
@@ -1006,13 +1050,23 @@ function renderWeek(){
         </details>
       </div>`;
     });
-    html += `</div>`;
+    html += `</div></div>`;
   }
   wrap.innerHTML = any ? html
     : `<div class="empty"><h3>Pusty tydzień</h3><p class="small">Wybierz dzień startu i naciśnij „Ułóż tydzień”.</p></div>`;
 
   wrap.querySelectorAll("details[data-key]").forEach(d=>{ if(open.has(d.dataset.key)) d.open = true; });
-  if(open.size) window.scrollTo(0, scrollY);
+  if(open.size && document.querySelector("[data-key]")) window.scrollTo(0, scrollY);
+
+  wrap.querySelectorAll("[data-tile]").forEach(b=> b.onclick=()=>{
+    const iso = b.dataset.tile;
+    openDay = (openDay === iso) ? null : iso;
+    renderWeek(); renderBalance();
+    if(openDay){
+      const el = document.querySelector(`[data-tile="${openDay}"]`);
+      if(el) el.scrollIntoView({block:"start", behavior:"smooth"});
+    }
+  });
 
   wrap.querySelectorAll("[data-rming]").forEach(b=> b.onclick=()=>{
     const [iso,s,idx]=b.dataset.rming.split("|"); rmIngFromPlan(iso,s,+idx); });
@@ -1341,6 +1395,7 @@ function renderShopSelectors(){
   from.value = days.includes(fv)?fv:days[0];
   to.value   = days.includes(tv)?tv:days[Math.min(6,days.length-1)];
 }
+let shopTab = "all";     // "all" = wszystkie, "missing" = jeszcze niekupione
 function buildShopping(){
   const from=document.getElementById("shopFrom").value, to=document.getElementById("shopTo").value;
   const wrap=document.getElementById("shopList");
@@ -1348,25 +1403,46 @@ function buildShopping(){
   const tot={};
   Object.keys(S.plan).filter(d=>d>=from&&d<=to).forEach(d=>{
     dayIngs(S.plan[d]).forEach(i=> tot[i.pid]=(tot[i.pid]||0)+i.g); });
-  let html="";
+
+  const wszystkie = Object.keys(tot).map(id=>P(id)).filter(Boolean);
+  const kupione   = wszystkie.filter(p=> S.shopChecked[p.id]).length;
+  const brakuje   = wszystkie.length - kupione;
+  const widoczne  = shopTab==="missing" ? wszystkie.filter(p=> !S.shopChecked[p.id]) : wszystkie;
+
+  let html = `<div class="hfilter" style="margin:0 2px 8px">
+      <button data-stab="all" class="${shopTab==="all"?"on":""}">wszystkie (${wszystkie.length})</button>
+      <button data-stab="missing" class="${shopTab==="missing"?"on":""}">brakujące (${brakuje})</button>
+      ${kupione?`<button data-sclear="1">Odznacz wszystko</button>`:""}
+    </div>`;
+
+  let sekcje = "";
   CATS.forEach(c=>{
-    const rows = Object.keys(tot).map(id=>P(id)).filter(p=>p&&p.cat===c);
+    const rows = widoczne.filter(p=>p.cat===c);
     if(!rows.length) return;
-    html += `<div class="card"><div class="eyebrow">${c}</div><div style="margin-top:6px">`;
+    sekcje += `<div class="card"><div class="eyebrow">${c}</div><div style="margin-top:6px">`;
     rows.sort((a,b)=>a.name.localeCompare(b.name,"pl")).forEach(p=>{
       const g=Math.round(tot[p.id]);
       let amount = g>=1000 ? (g/1000).toFixed(2)+" kg" : g+" g";
       if(p.pack) amount = `${Math.ceil(g/p.pack)} × opak. (${amount})`;
       else if(p.piece) amount = `${Math.ceil(g/p.piece)} szt (${amount})`;
       const done=!!S.shopChecked[p.id];
-      html += `<div class="item ${done?"done":""}">
+      sekcje += `<div class="item ${done?"done":""}">
         <label class="row" style="gap:10px;flex:1"><input type="checkbox" class="chk" data-shop="${p.id}" ${done?"checked":""}>
           <span class="t">${esc(p.name)}</span></label>
         <span class="num small">${amount}</span></div>`;
     });
-    html += `</div></div>`;
+    sekcje += `</div></div>`;
   });
-  wrap.innerHTML = html || `<div class="empty"><p>Nic do kupienia w tym zakresie.</p></div>`;
+
+  if(!sekcje) sekcje = shopTab==="missing" && wszystkie.length
+    ? `<div class="empty"><h3>Wszystko kupione</h3><p class="small">Cała lista odhaczona. Zakładka „wszystkie" pokazuje ją dalej.</p></div>`
+    : `<div class="empty"><p>Nic do kupienia w tym zakresie.</p></div>`;
+
+  wrap.innerHTML = html + sekcje;
+  wrap.querySelectorAll("[data-stab]").forEach(b=> b.onclick=()=>{ shopTab=b.dataset.stab; buildShopping(); });
+  const clr = wrap.querySelector("[data-sclear]");
+  if(clr) clr.onclick = ()=>{ wszystkie.forEach(p=> delete S.shopChecked[p.id]); save(); buildShopping();
+                              toast("Zaznaczenia wyczyszczone."); };
   wrap.querySelectorAll("[data-shop]").forEach(cb=> cb.onchange=()=>{
     S.shopChecked[cb.dataset.shop]=cb.checked; save(); buildShopping(); });
 }
@@ -1488,6 +1564,7 @@ function go(v){
   if(v==="meals") renderMeals();
   if(v==="prod") renderProducts();
   if(v==="shop"){ renderShopSelectors(); buildShopping(); }
+  if(v==="week") renderBalance();
   if(v==="set") renderSettings();
   window.scrollTo(0,0);
 }
