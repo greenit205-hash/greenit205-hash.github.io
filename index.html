@@ -87,6 +87,27 @@ label.fld > span{display:block;font-size:12px;color:var(--muted);margin-bottom:4
   border:1px solid var(--line);color:var(--muted)}
 .tag.k{border-color:var(--berry);color:var(--berry)}
 .tag.l{border-color:var(--ink);color:var(--ink);background:#EFEDE6}
+.lockbtn{border:1px solid var(--line);background:var(--surface);border-radius:6px;
+  width:30px;height:30px;line-height:1;padding:0;font-size:14px;cursor:pointer;flex:none;
+  color:var(--muted);transition:background .12s,border-color .12s}
+.lockbtn.on{border-color:var(--berry);background:#F6E9F0;color:var(--berry)}
+.ings li.locked .nm{font-weight:600}
+.lockbar{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:8px}
+.daybar{display:flex;gap:6px;flex-wrap:wrap;padding:8px 12px 0}
+.tag.p{border-color:#7A6A2E;color:#7A6A2E;background:#F6F2E2}
+.hist{border-top:1px solid var(--line);padding:10px 0}
+.hist:first-of-type{border-top:0}
+.hist .hd{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.hist .dv{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.hist .mn{font-size:12.5px;color:var(--muted);margin:3px 0 6px;line-height:1.45}
+.score{font-family:var(--mono);font-size:11px;padding:2px 6px;border-radius:999px;border:1px solid var(--line)}
+.score.a{border-color:#2F6B45;color:#2F6B45;background:#E8F3EC}
+.score.b{border-color:#7A6A2E;color:#7A6A2E;background:#F6F2E2}
+.score.c{border-color:#8C3A3A;color:#8C3A3A;background:#F6E9E9}
+.hfilter{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 4px}
+.hfilter button{font-size:12px;padding:5px 10px;border-radius:999px;border:1px solid var(--line);
+  background:var(--surface);cursor:pointer;color:var(--muted)}
+.hfilter button.on{border-color:var(--berry);color:var(--berry);background:#F6E9F0}
 details summary{cursor:pointer;font-size:13px;color:var(--berry);font-weight:600;list-style:none}
 details summary::-webkit-details-marker{display:none}
 details summary::before{content:"+ "} details[open] summary::before{content:"– "}
@@ -151,6 +172,7 @@ video{width:100%;border-radius:12px;background:#000}
           <option value="1" selected>powtórki czasem</option>
           <option value="2">gotuję na 2 dni</option>
         </select>
+        <button class="btn ghost sm" id="btnHistory">Historia dni</button>
       </div>
     </div>
     <div id="weekList"></div>
@@ -215,6 +237,7 @@ video{width:100%;border-radius:12px;background:#000}
       <div class="row" style="gap:8px;flex-wrap:wrap">
         <button class="btn ghost sm" id="btnExport">Zapisz kopię</button>
         <button class="btn ghost sm" id="btnImport">Wczytaj kopię / paczkę</button>
+        <button class="btn ghost sm" id="btnForgetAll" style="display:none">Zapomnij gramatury</button>
         <button class="btn ghost sm" id="btnReset">Wyczyść wszystko</button>
       </div>
       <input type="file" id="fileIn" accept="application/json" style="display:none">
@@ -262,13 +285,26 @@ function plDay(iso){ const d=new Date(iso+"T12:00:00"); const n=DOW[d.getDay()];
 /* ---------- pamięć ---------- */
 function emptyState(){
   return { settings:{kcal:2400,prot:170,fat:75,split:{b:30,l:38,d:32},rules:[]},
-           products:[], meals:[], plan:{}, log:[], shopChecked:{},
+           products:[], meals:[], plan:{}, log:[], shopChecked:{}, prefs:{}, clip:null,
            weekStart: todayISO(), ai:{url:"",secret:""} };
 }
 function load(){
-  try{ const raw = localStorage.getItem(KEY); if(raw){ S = JSON.parse(raw); return; } }catch(e){}
+  try{ const raw = localStorage.getItem(KEY); if(raw){ S = JSON.parse(raw);
+       S.prefs = S.prefs || {}; if(!("clip" in S)) S.clip = null; return; } }catch(e){}
   S = emptyState(); save();
 }
+
+/* ---------- zapamiętane gramatury ----------
+   Kiedy ręcznie zmienisz gramaturę, zapisujemy ją przy tym daniu. Następnym razem,
+   gdy danie wypadnie w tygodniu, startuje z Twoich liczb, a solver trzyma się ich
+   blisko (kara za odejście od bazy). To nie AI — to deterministyczna pamięć aplikacji. */
+function prefSet(recipeId, pid, g){
+  if(!recipeId) return;
+  S.prefs = S.prefs || {};
+  (S.prefs[recipeId] = S.prefs[recipeId] || {})[pid] = Math.max(1, Math.round(g));
+}
+function prefClear(recipeId){ if(S.prefs) delete S.prefs[recipeId]; }
+const prefCount = () => Object.keys(S.prefs||{}).length;
 function save(){ try{ localStorage.setItem(KEY, JSON.stringify(S)); }catch(e){} }
 
 /* ---------- makro ---------- */
@@ -291,26 +327,31 @@ function dayMacro(iso){ const d=S.plan[iso]; return d ? sumMacro(dayIngs(d)) : n
    SOLVER — dobiera gramatury tak, żeby dzień trafił w cel.
    Kotwice (mięso, jajka, ryż, całe opakowania) trzymają się swojej wartości;
    ruszają się dopiero, gdy bufory nie dają rady. Zablokowane (Twoja ręczna
-   zmiana) nie ruszają się nigdy.
+   zmiana) nie ruszają się nigdy. Posiłek oznaczony jako zjedzony jest
+   zamrożony w całości — to już się wydarzyło, więc dopasowujemy resztę dnia.
    ========================================================================== */
-const W = {kcal:1/9, prot:1.4, carb:0.45, fat:0.9, anchor:0.35};
+const W = {kcal:1/9, prot:1.4, carb:0.45, fat:0.9, anchor:0.35, pref:0.22};
 
 function solveDay(day, target){
   const vars = [];
   SLOTS.forEach(s=>{
     const e = day[s.id]; if(!e) return;
+    if(e.eaten) return;              // zjedzone = fakt, nie plan — nie ruszamy
     e.ings.forEach(i=>{
       if(i.locked || i.role==="staly") return;
       const pr = P(i.pid); if(!pr) return;
       const lo = Math.max(1, Math.round(i.min ?? (i.role==="kotwica" ? i.g : i.g*0.35)));
       const hi = Math.max(lo, Math.round(i.max ?? (i.role==="kotwica" ? i.g : Math.min(600, i.g*2.6))));
       if(hi <= lo) return;
-      vars.push({ing:i, per:per(pr), lo, hi, base:(i.base ?? i.g), anchor:i.role==="kotwica"});
+      vars.push({ing:i, per:per(pr), lo, hi, base:(i.base ?? i.g),
+                 anchor:i.role==="kotwica", pref:!!i.pref});
     });
   });
 
   let tot = sumMacro(dayIngs(day));
-  const pen = () => vars.reduce((a,v)=> a + (v.anchor ? W.anchor*Math.abs(v.ing.g - v.base) : 0), 0);
+  const pen = () => vars.reduce((a,v)=> a
+      + (v.anchor ? W.anchor*Math.abs(v.ing.g - v.base) : 0)
+      + (v.pref   ? W.pref  *Math.abs(v.ing.g - v.base) : 0), 0);
   const err = t => W.kcal*Math.abs(t.kcal-target.kcal) + W.prot*Math.abs(t.prot-target.prot)
                  + W.carb*Math.abs(t.carb-target.carb) + W.fat*Math.abs(t.fat-target.fat);
   const shift = (v, from, to) => {          // per(...) jest na 1 g
@@ -349,8 +390,13 @@ function solveDay(day, target){
 }
 
 function ingsFromMeal(meal){
-  return meal.ings.map(i=>({pid:i.pid, g:i.g, base:i.g, role:i.role||"bufor",
-                            min:i.min, max:i.max, locked:false}));
+  const pr = (S.prefs||{})[meal.id] || {};
+  return meal.ings.map(i=>{
+    const zap = pr[i.pid];
+    const g = (zap!=null && i.role!=="staly") ? zap : i.g;
+    return {pid:i.pid, g, base:g, role:i.role||"bufor",
+            min:i.min, max:i.max, locked:false, pref:(zap!=null && i.role!=="staly")};
+  });
 }
 function buildDay(sel){
   const day = {};
@@ -472,6 +518,8 @@ async function pickAI(start, wish){
     dania:S.meals.filter(m=>m.slot===s.id).map(m=>({n:m.name, ocena:m.rating, min:m.time, tagi:m.tags||[]}))
   }));
   const hist = (S.log||[]).slice(-40).map(l=>`${l.date} ${l.slot}: ${l.name} (${l.action})`);
+  const dopasowane = Object.keys(S.prefs||{})
+    .map(id => (S.meals.find(m=>m.id===id)||{}).name).filter(Boolean);
   const dni = [];
   for(let i=0;i<7;i++){ const iso=addDays(start,i); dni.push({data:iso, dzien:DOW[dowOf(iso)]}); }
   const mode = ["bez powtórek","powtórki dozwolone od czasu do czasu","gotuję raz na dwa dni — ten sam obiad w parach dni"][+document.getElementById("optRepeat").value];
@@ -486,6 +534,7 @@ Odpowiadasz WYŁĄCZNIE obiektem JSON, bez komentarza i bez markdown:
   const user = `Dni: ${JSON.stringify(dni)}
 Dostępne dania: ${JSON.stringify(menu)}
 Ostatnio jedzone: ${JSON.stringify(hist)}
+Dania dopasowane przez użytkownika (ręcznie poprawiał gramatury — traktuj jako sprawdzone i chętniej po nie sięgaj): ${JSON.stringify(dopasowane)}
 Życzenia użytkownika: ${wish||"brak"}`;
 
   const txt = await aiCall({model:"claude-opus-5", max_tokens:2000, system:sys,
@@ -536,6 +585,121 @@ async function generateWeek(){
   }
   save(); renderWeek(); renderShopSelectors();
   toast(viaAI ? "Tydzień ułożony przez Claude'a." : "Tydzień ułożony.");
+}
+
+/* ==========================================================================
+   SCHOWEK — kopiowanie posiłków i całych dni
+   ========================================================================== */
+function cloneIngs(list){ return list.map(i=>({...i})); }
+
+function copyMeal(iso, slotId){
+  const e = S.plan[iso] && S.plan[iso][slotId]; if(!e) return;
+  const m = S.meals.find(x=>x.id===e.recipeId);
+  S.clip = {type:"meal", slot:slotId, recipeId:e.recipeId,
+            ings:cloneIngs(e.ings), label:(m?m.name:"posiłek")};
+  save(); renderWeek(); toast(`Skopiowane: ${m?m.name:"posiłek"}`);
+}
+function copyDay(iso){
+  const d = S.plan[iso]; if(!d) return;
+  const day = {};
+  SLOTS.forEach(s=>{ if(d[s.id]) day[s.id] = {recipeId:d[s.id].recipeId, ings:cloneIngs(d[s.id].ings)}; });
+  S.clip = {type:"day", day, label:plDay(iso)};
+  save(); renderWeek(); toast(`Skopiowany dzień: ${plDay(iso)}`);
+}
+function pasteMeal(iso, slotId){
+  const c = S.clip; if(!c || c.type!=="meal") return;
+  if(c.slot !== slotId){ toast("To posiłek na inną porę dnia."); return; }
+  const day = S.plan[iso]; if(!day) return;
+  const stare = day[slotId] && S.meals.find(m=>m.id===day[slotId].recipeId);
+  day[slotId] = {recipeId:c.recipeId, ings:cloneIngs(c.ings)};
+  logAdd(iso, slotId, stare?stare.name:"?", "wklejone");
+  solveDay(day, dayTarget()); save(); renderWeek(); renderBalance();
+  toast("Wklejone — reszta dnia dopasowana.");
+}
+function pasteDay(iso){
+  const c = S.clip; if(!c || c.type!=="day") return;
+  const day = {};
+  SLOTS.forEach(s=>{ if(c.day[s.id]) day[s.id] = {recipeId:c.day[s.id].recipeId, ings:cloneIngs(c.day[s.id].ings)}; });
+  S.plan[iso] = day;
+  logAdd(iso, "-", c.label, "wklejony dzień");
+  save(); renderWeek(); renderShopSelectors(); renderBalance();
+  toast("Dzień wklejony — gramatury bez zmian.");
+}
+
+/* ==========================================================================
+   HISTORIA DNI — przeglądanie wszystkich ułożonych dni, od najnowszych.
+   Pokazuje odchyłkę od celu, żeby dało się szybko znaleźć dzień „w punkt"
+   i skopiować go w całości.
+   ========================================================================== */
+let histFilter = "all";
+
+function dayDelta(iso){
+  const m = dayMacro(iso); if(!m) return null;
+  const t = dayTarget();
+  const d = {kcal:m.kcal-t.kcal, prot:m.prot-t.prot, carb:m.carb-t.carb, fat:m.fat-t.fat};
+  /* jedna liczba na „jak blisko" — te same wagi, którymi liczy solver */
+  const score = Math.abs(d.kcal)/9 + 1.4*Math.abs(d.prot) + 0.45*Math.abs(d.carb) + 0.9*Math.abs(d.fat);
+  return {m, d, score};
+}
+function histRows(){
+  const rows = [];
+  Object.keys(S.plan).forEach(iso=>{
+    const day = S.plan[iso];
+    if(!day || !SLOTS.some(s=>day[s.id])) return;
+    const dd = dayDelta(iso); if(!dd) return;
+    const st = dayStatus(iso);
+    const eaten = SLOTS.filter(s=>day[s.id] && day[s.id].eaten).length;
+    const total = SLOTS.filter(s=>day[s.id]).length;
+    const names = SLOTS.map(s=>{
+      const e = day[s.id]; if(!e) return null;
+      const m = S.meals.find(x=>x.id===e.recipeId);
+      return m ? m.name : "usunięte danie";
+    }).filter(Boolean);
+    rows.push({iso, ...dd, ok:st.ok, eaten, total, names});
+  });
+  rows.sort((a,b)=> a.iso < b.iso ? 1 : -1);
+  return rows;
+}
+function renderHistory(){
+  const all = histRows();
+  const rows = histFilter==="ok"    ? all.filter(r=>r.ok)
+             : histFilter==="eaten" ? all.filter(r=>r.eaten>0)
+             : all;
+  const sgn = v => (v>=0?"+":"") + Math.round(v);
+  const body = rows.length ? rows.map(r=>{
+    /* „w punkt" = ten sam próg, co zielona liczba w nagłówku dnia */
+    const cls = r.ok ? "a" : r.score<60 ? "b" : "c";
+    const etykieta = r.ok ? "w punkt" : r.score<60 ? "blisko" : "rozjechany";
+    return `<div class="hist">
+      <div class="hd">
+        <strong>${plDay(r.iso)}</strong>
+        <span class="score ${cls}">${etykieta}</span>
+      </div>
+      <div class="dv">${Math.round(r.m.kcal)} kcal (${sgn(r.d.kcal)}) ·
+        B${Math.round(r.m.prot)} (${sgn(r.d.prot)}) ·
+        W${Math.round(r.m.carb)} (${sgn(r.d.carb)}) ·
+        T${Math.round(r.m.fat)} (${sgn(r.d.fat)})${r.eaten?` · zjedzone ${r.eaten}/${r.total}`:""}</div>
+      <div class="mn">${r.names.map(esc).join(" · ")}</div>
+      <button class="btn ghost sm" data-histcopy="${r.iso}">Kopiuj ten dzień</button>
+    </div>`;
+  }).join("") : `<div class="empty"><p class="small">Nic tu jeszcze nie ma${histFilter!=="all"?" dla tego filtra":""}.</p></div>`;
+
+  openSheet(`
+    <h3>Historia dni</h3>
+    <p class="small muted" style="margin:2px 0 0">${all.length} ${all.length===1?"dzień":"dni"} w pamięci.
+      Skopiuj dzień, a potem wklej go w tygodniu przyciskiem „Wklej dzień".</p>
+    <div class="hfilter">
+      <button data-hf="all"   class="${histFilter==="all"?"on":""}">wszystkie</button>
+      <button data-hf="ok"    class="${histFilter==="ok"?"on":""}">tylko w punkt</button>
+      <button data-hf="eaten" class="${histFilter==="eaten"?"on":""}">tylko zjedzone</button>
+    </div>
+    <div>${body}</div>`);
+
+  const inner = document.getElementById("sheetInner");
+  inner.querySelectorAll("[data-hf]").forEach(b=> b.onclick=()=>{
+    histFilter = b.dataset.hf; renderHistory(); });
+  inner.querySelectorAll("[data-histcopy]").forEach(b=> b.onclick=()=>{
+    copyDay(b.dataset.histcopy); closeSheet(); });
 }
 
 function rerollMeal(iso, slotId){
@@ -637,6 +801,8 @@ function renderBalance(){
 
 function renderWeek(){
   const wrap = document.getElementById("weekList");
+  const open = new Set([...wrap.querySelectorAll("details[open][data-key]")].map(d=>d.dataset.key));
+  const scrollY = window.scrollY;
   const start = S.weekStart || todayISO();
   document.getElementById("weekStart").value = start;
   let html = "", any = false;
@@ -645,37 +811,61 @@ function renderWeek(){
     if(!day) continue;
     any = true;
     const st = dayStatus(iso);
+    const clip = S.clip;
     html += `<div class="day"><div class="dayhead">
       <span class="d">${plDay(iso)}</span>
       <span class="k ${st.ok?"":"bad"}">${Math.round(st.m.kcal)} kcal · B${Math.round(st.m.prot)} W${Math.round(st.m.carb)} T${Math.round(st.m.fat)}</span>
+    </div>
+    <div class="daybar">
+      <button class="btn ghost sm" data-copyday="${iso}">Kopiuj dzień</button>
+      ${clip && clip.type==="day" ? `<button class="btn ghost sm" data-pasteday="${iso}">Wklej dzień · ${esc(clip.label)}</button>` : ""}
     </div>`;
     SLOTS.forEach(s=>{
       const e = day[s.id]; if(!e) return;
       const meal = S.meals.find(m=>m.id===e.recipeId);
       const mm = sumMacro(e.ings);
+      const nLock = e.ings.filter(i=>i.locked).length;
+      const hasPref = !!(S.prefs && S.prefs[e.recipeId] && Object.keys(S.prefs[e.recipeId]).length);
       html += `<div class="meal ${e.eaten?"eaten":""}">
         <div class="between">
           <span class="slot">${s.name}</span>
           <div class="row" style="gap:6px">
             <button class="btn ghost sm" data-eat="${iso}|${s.id}">${e.eaten?"✓ zjedzone":"Zjedzone"}</button>
+            <button class="btn ghost sm" data-copymeal="${iso}|${s.id}" title="Kopiuj ten posiłek z gramaturami">⧉</button>
+            ${S.clip && S.clip.type==="meal" && S.clip.slot===s.id
+              ? `<button class="btn ghost sm" data-pastemeal="${iso}|${s.id}" title="Wklej: ${esc(S.clip.label)}">⤵</button>` : ""}
             <button class="btn ghost sm" data-reroll="${iso}|${s.id}">Zamień</button>
           </div>
         </div>
-        <div class="name">${meal?esc(meal.name):"usunięte danie"}</div>
+        <div class="name">${meal?esc(meal.name):"usunięte danie"}${hasPref?` <span class="tag p">twoje gramatury</span>`:""}${e.eaten?` <span class="tag l">zamrożone</span>`:""}</div>
         <div class="macros"><span><b>${Math.round(mm.kcal)}</b> kcal</span><span>B <b>${Math.round(mm.prot)}</b></span>
           <span>W <b>${Math.round(mm.carb)}</b></span><span>T <b>${Math.round(mm.fat)}</b></span>
           ${meal&&meal.time?`<span>${meal.time} min</span>`:""}</div>
-        <details><summary>Gramatura</summary>
+        <details data-key="${iso}|${s.id}"><summary>Gramatura${nLock?` · ${nLock} 🔒`:""}</summary>
           <ul class="ings">${e.ings.map((ing,idx)=>{
             const p=P(ing.pid); if(!p) return "";
             const unit = p.piece ? ` <span class="tiny muted">${(ing.g/p.piece).toFixed(1).replace(".0","")} szt</span>` : "";
-            const tag = ing.locked ? `<span class="tag l">stałe</span>`
+            const staly = ing.role==="staly";
+            const tag = staly ? `<span class="tag l">stałe</span>`
                       : ing.role==="kotwica" ? `<span class="tag k">kotwica</span>` : "";
-            return `<li><span class="nm">${esc(p.name)}${unit}</span>${tag}
+            const btn = e.eaten ? `<button class="lockbtn on" disabled title="Posiłek zjedzony — gramatury zamrożone">🔒</button>`
+                      : staly ? `<button class="lockbtn" disabled title="Składnik stały — nigdy się nie zmienia">🔒</button>`
+                              : `<button class="lockbtn ${ing.locked?"on":""}" data-lock="${iso}|${s.id}|${idx}"
+                                   title="${ing.locked?"Zablokowane — kliknij, żeby zwolnić":"Zablokuj tę gramaturę"}"
+                                   aria-pressed="${ing.locked?"true":"false"}">${ing.locked?"🔒":"🔓"}</button>`;
+            return `<li class="${ing.locked?"locked":""}"><span class="nm">${esc(p.name)}${unit}</span>${tag}
               <input type="number" data-g="${iso}|${s.id}|${idx}" value="${ing.g}" inputmode="numeric">
-              <button class="btn ghost sm" data-unlock="${iso}|${s.id}|${idx}" ${ing.locked?"":'style="visibility:hidden"'}>↺</button></li>`;
+              ${btn}</li>`;
           }).join("")}</ul>
-          <p class="tiny muted" style="margin:8px 0 0">Zmień dowolną liczbę — reszta dnia przeliczy się sama.</p>
+          <div class="lockbar">
+            <span class="tiny muted">${e.eaten
+              ? "Posiłek zjedzony — gramatury zamrożone. Możesz je poprawić na to, co faktycznie zjadłeś; reszta dnia się dopasuje."
+              : `Kłódka trzyma gramaturę. Zmiana liczby blokuje automatycznie${hasPref?" i zapisuje ją na przyszłość":""}.`}</span>
+            <span class="row" style="gap:6px">
+              ${nLock?`<button class="btn ghost sm" data-unlockall="${iso}|${s.id}">Zwolnij wszystkie</button>`:""}
+              ${hasPref?`<button class="btn ghost sm" data-forget="${e.recipeId}">Zapomnij gramatury</button>`:""}
+            </span>
+          </div>
         </details>
       </div>`;
     });
@@ -684,22 +874,50 @@ function renderWeek(){
   wrap.innerHTML = any ? html
     : `<div class="empty"><h3>Pusty tydzień</h3><p class="small">Wybierz dzień startu i naciśnij „Ułóż tydzień”.</p></div>`;
 
+  wrap.querySelectorAll("details[data-key]").forEach(d=>{ if(open.has(d.dataset.key)) d.open = true; });
+  if(open.size) window.scrollTo(0, scrollY);
+
+  wrap.querySelectorAll("[data-copymeal]").forEach(b=> b.onclick=()=>{
+    const [iso,s]=b.dataset.copymeal.split("|"); copyMeal(iso,s); });
+  wrap.querySelectorAll("[data-pastemeal]").forEach(b=> b.onclick=()=>{
+    const [iso,s]=b.dataset.pastemeal.split("|"); pasteMeal(iso,s); });
+  wrap.querySelectorAll("[data-copyday]").forEach(b=> b.onclick=()=> copyDay(b.dataset.copyday));
+  wrap.querySelectorAll("[data-pasteday]").forEach(b=> b.onclick=()=> pasteDay(b.dataset.pasteday));
+  wrap.querySelectorAll("[data-forget]").forEach(b=> b.onclick=()=>{
+    prefClear(b.dataset.forget); save(); renderWeek(); renderSettings();
+    toast("Zapamiętane gramatury usunięte."); });
+
   wrap.querySelectorAll("[data-reroll]").forEach(b=> b.onclick=()=>{
     const [iso,s]=b.dataset.reroll.split("|"); rerollMeal(iso,s); });
   wrap.querySelectorAll("[data-eat]").forEach(b=> b.onclick=()=>{
     const [iso,s]=b.dataset.eat.split("|"); const e=S.plan[iso][s];
     e.eaten=!e.eaten;
     if(e.eaten){ const m=S.meals.find(x=>x.id===e.recipeId); logAdd(iso,s,m?m.name:"?","zjedzone"); }
-    save(); renderWeek(); });
+    rebalance(iso); renderWeek(); renderBalance();
+    toast(e.eaten ? "Zamrożone — reszta dnia dopasowana."
+                  : "Odznaczone — solver znów może to ruszać."); });
   wrap.querySelectorAll("[data-g]").forEach(inp=> inp.onchange=()=>{
     const [iso,s,idx]=inp.dataset.g.split("|");
     const ing = S.plan[iso][s].ings[+idx];
-    ing.g = Math.max(1, Math.round(+inp.value||1)); ing.locked = true;
+    const nowa = Math.max(1, Math.round(+inp.value||1));
+    if(nowa !== ing.g){
+      ing.g = nowa; ing.base = nowa; ing.locked = true; ing.pref = true;
+      if(ing.role!=="staly") prefSet(S.plan[iso][s].recipeId, ing.pid, nowa);
+    }
+    rebalance(iso); renderWeek(); renderBalance(); renderSettings();
+    toast("Przeliczone — zapamiętane na przyszłość."); });
+  wrap.querySelectorAll("[data-lock]").forEach(b=> b.onclick=()=>{
+    const [iso,s,idx]=b.dataset.lock.split("|");
+    const ing = S.plan[iso][s].ings[+idx];
+    ing.locked = !ing.locked;
     rebalance(iso); renderWeek(); renderBalance();
-    toast("Przeliczone — reszta dnia dostosowana."); });
-  wrap.querySelectorAll("[data-unlock]").forEach(b=> b.onclick=()=>{
-    const [iso,s,idx]=b.dataset.unlock.split("|");
-    S.plan[iso][s].ings[+idx].locked=false; rebalance(iso); renderWeek(); });
+    toast(ing.locked ? "Zablokowane — reszta dnia dopasowana."
+                     : "Zwolnione — solver może to ruszać."); });
+  wrap.querySelectorAll("[data-unlockall]").forEach(b=> b.onclick=()=>{
+    const [iso,s]=b.dataset.unlockall.split("|");
+    S.plan[iso][s].ings.forEach(i=> i.locked=false);
+    rebalance(iso); renderWeek(); renderBalance();
+    toast("Wszystkie kłódki zwolnione."); });
   renderBalance();
 }
 
@@ -855,7 +1073,8 @@ function mealSheet(id){
     };
     if(id) document.getElementById("mDel").onclick = ()=>{
       if(!confirm("Usunąć to danie?")) return;
-      S.meals = S.meals.filter(x=>x.id!==id); save(); closeSheet(); renderMeals(); };
+      S.meals = S.meals.filter(x=>x.id!==id); prefClear(id);
+      save(); closeSheet(); renderMeals(); };
   };
   openSheet(""); bind();
 }
@@ -1023,6 +1242,9 @@ function renderSettings(){
   let ok="pamięć działa";
   try{ localStorage.setItem("__t","1"); localStorage.removeItem("__t"); }catch(e){ ok="brak zapisu — dane znikną po zamknięciu"; }
   g("storeInfo").textContent = `${S.products.length} produktów · ${S.meals.length} dań · ${Object.keys(S.plan).length} dni w planie · ${(S.log||[]).length} wpisów historii · ${ok}`;
+  const pc = prefCount();
+  const pb = g("btnForgetAll");
+  if(pb){ pb.style.display = pc ? "" : "none"; pb.textContent = `Zapomnij gramatury (${pc})`; }
 }
 function bindSettings(){
   ["sKcal","sProt","sFat","sB","sL","sD"].forEach(id=>{
@@ -1136,6 +1358,11 @@ document.getElementById("btnScan").onclick = scanSheet;
 document.getElementById("btnAiMeal").onclick = aiMealSheet;
 document.getElementById("mealSearch").oninput = renderMeals;
 document.getElementById("prodSearch").oninput = renderProducts;
+document.getElementById("btnForgetAll").onclick = ()=>{
+  if(!confirm("Usunąć wszystkie zapamiętane gramatury? Dania wrócą do wartości z przepisu.")) return;
+  S.prefs = {}; save(); renderSettings(); renderWeek(); toast("Zapamiętane gramatury wyczyszczone.");
+};
+document.getElementById("btnHistory").onclick = renderHistory;
 document.getElementById("btnShop").onclick = buildShopping;
 bindSettings();
 renderAll();
