@@ -251,7 +251,7 @@ video{width:100%;border-radius:12px;background:#000}
         <button class="btn ghost sm" id="btnReset">Wyczyść wszystko</button>
       </div>
       <input type="file" id="fileIn" accept="application/json" style="display:none">
-      <p class="tiny muted" id="storeInfo" style="margin-top:10px"></p>
+      <p class="tiny muted" id="storeInfo" style="margin-top:10px;white-space:pre-line"></p>
     </div>
   </section>
 </main>
@@ -275,6 +275,7 @@ video{width:100%;border-radius:12px;background:#000}
    i czyta etykiety — nigdy nie liczy gramatury.
    ========================================================================== */
 
+const APP_VER = "rev8 · 17.08.2026";   // widoczne w Ustawieniach — po aktualizacji sprawdź, czy się zgadza
 const KEY   = "jadlospis.v2";
 const SLOTS = [{id:"b",name:"Śniadanie"},{id:"l",name:"Obiad"},{id:"d",name:"Kolacja"}];
 const CATS  = ["mięso i ryby","nabiał i jaja","zboża i pieczywo","warzywa","owoce","tłuszcze i orzechy","strączki","inne"];
@@ -1385,7 +1386,8 @@ function renderSettings(){
     : `Suma to ${sum}% — popraw, żeby wyszło 100%.`;
   let ok="pamięć działa";
   try{ localStorage.setItem("__t","1"); localStorage.removeItem("__t"); }catch(e){ ok="brak zapisu — dane znikną po zamknięciu"; }
-  g("storeInfo").textContent = `${S.products.length} produktów · ${S.meals.length} dań · ${Object.keys(S.plan).length} dni w planie · ${(S.log||[]).length} wpisów historii · ${ok}`;
+  g("storeInfo").textContent = `Wersja aplikacji: ${APP_VER}
+${S.products.length} produktów · ${S.meals.length} dań · ${Object.keys(S.plan).length} dni w planie · ${(S.log||[]).length} wpisów historii · ${ok}`;
   const pc = prefCount();
   const pb = g("btnForgetAll");
   if(pb){ pb.style.display = pc ? "" : "none"; pb.textContent = `Zapomnij gramatury (${pc})`; }
