@@ -108,6 +108,10 @@ label.fld > span{display:block;font-size:12px;color:var(--muted);margin-bottom:4
   padding:0;font-size:19px;line-height:1;color:var(--ink);cursor:pointer;flex:none;
   -webkit-user-select:none;user-select:none;touch-action:manipulation}
 .stp:active{background:#F6E9F0;border-color:var(--berry);color:var(--berry)}
+.nmbtn{background:none;border:0;padding:0;margin:0;font:inherit;color:inherit;text-align:left;
+  cursor:pointer;display:block;width:100%}
+.nmbtn .sw{color:var(--berry);font-size:12px;margin-left:5px;opacity:.75}
+.nmbtn:active{color:var(--berry)}
 .tag{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;padding:2px 5px;border-radius:4px;
   border:1px solid var(--line);color:var(--muted)}
 .tag.k{border-color:var(--berry);color:var(--berry)}
@@ -261,7 +265,7 @@ video{width:100%;border-radius:12px;background:#000}
     <div class="card">
       <h3>Claude (AI)</h3>
       <p class="small muted">Adres Twojego proxy na Cloudflare i hasło z pliku worker.js.</p>
-      <label class="fld"><span>Adres proxy</span><input type="text" id="aiUrl" placeholder="https://jadlospis-ai.xxx.workers.dev"></label>
+      <label class="fld"><span>Adres proxy</span><input type="text" id="aiUrl" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://jadlospis-ai.xxx.workers.dev"></label><p class="tiny muted" style="margin:-4px 0 8px">Musi zaczynać się od <code>https://</code> — bez tego telefon wysyła zapytanie do samego siebie.</p>
       <label class="fld"><span>Hasło</span><input type="password" id="aiSecret"></label>
       <div class="row" style="gap:8px"><button class="btn ghost sm" id="btnAiTest">Sprawdź połączenie</button>
         <span class="small" id="aiStatus"></span></div>
@@ -311,7 +315,7 @@ video{width:100%;border-radius:12px;background:#000}
    i czyta etykiety — nigdy nie liczy gramatury.
    ========================================================================== */
 
-const APP_VER = "rev12 · 18.08.2026";   // widoczne w Ustawieniach — po aktualizacji sprawdź, czy się zgadza
+const APP_VER = "rev14 · 19.08.2026";   // widoczne w Ustawieniach — po aktualizacji sprawdź, czy się zgadza
 const KEY   = "jadlospis.v2";
 const SLOTS = [{id:"b",name:"Śniadanie"},{id:"l",name:"Obiad"},{id:"d",name:"Kolacja"}];
 const CATS  = ["mięso i ryby","nabiał i jaja","zboża i pieczywo","warzywa","owoce","tłuszcze i orzechy","strączki","inne"];
@@ -656,6 +660,77 @@ function stepIng(iso, slotId, idx, znak, inputEl){
   stepT = setTimeout(()=>{ rebalance(iso); renderWeek(); renderBalance(); renderSettings(); }, 600);
 }
 
+/* ==========================================================================
+   WYBIERAK PRODUKTU — jedna wyszukiwarka używana i przy dodawaniu składnika,
+   i przy podmianie. Lista 150 produktów w natywnym <select> jest na telefonie
+   nie do przewinięcia, a klawiatury tam nie ma.
+   ========================================================================== */
+/* Na telefonie nikt nie sięga po ogonki w wyszukiwarce — "ryz" ma znaleźć "Ryż".
+   NFD rozkłada ą/ć/ę/ń/ó/ś/ź/ż na literę + znak diakrytyczny; ł trzeba osobno. */
+const bezOgonkow = t => (t||"").toLowerCase().replace(/ł/g,"l")
+  .normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+
+let pickQuery = "";
+function wybierzProdukt(opcje){
+  pickQuery = "";
+  rysujWybierak(opcje);
+}
+function rysujWybierak({tytul, podtytul, pomin=[], onPick}){
+  const q = bezOgonkow(pickQuery).trim();
+  const lista = S.products
+    .filter(p => !pomin.includes(p.id))
+    .filter(p => !q || bezOgonkow(p.name).includes(q))
+    .sort((a,b)=> a.name.localeCompare(b.name,"pl"))
+    .slice(0, 60);
+
+  const body = lista.length ? lista.map(p=>`
+    <div class="swap">
+      <div class="hd"><strong>${esc(p.name)}</strong>
+        <span class="tiny muted">${esc(p.cat)}</span></div>
+      <div class="dv">${p.kcal} kcal · B${p.prot} W${p.carb} T${p.fat} /100 g${
+        p.pack?` · opak. ${p.pack} g`:""}${p.piece?` · szt. ${p.piece} g`:""}</div>
+      <button class="btn ghost sm" data-pick="${p.id}">Wybierz</button>
+    </div>`).join("")
+    : `<div class="empty"><p class="small">Nic nie pasuje do „${esc(pickQuery)}".</p>
+       <p class="tiny muted">Nowe produkty dodajesz w zakładce Produkty — skanem albo ręcznie.</p></div>`;
+
+  openSheet(`
+    <h3>${esc(tytul)}</h3>
+    ${podtytul?`<p class="small muted" style="margin:2px 0 0">${esc(podtytul)}</p>`:""}
+    <input type="text" id="pickQ" placeholder="Wpisz nazwę produktu" value="${esc(pickQuery)}"
+           autocapitalize="off" autocorrect="off" spellcheck="false" style="margin-top:8px">
+    <p class="tiny muted" style="margin:6px 0 0">${S.products.length} produktów w bazie${
+      lista.length===60?" · pokazuję pierwsze 60, doprecyzuj wpisując więcej liter":""}</p>
+    <div style="margin-top:6px">${body}</div>
+    <button class="btn ghost" id="pickClose" style="width:100%;margin-top:12px">Anuluj</button>`);
+
+  const qi = document.getElementById("pickQ");
+  qi.oninput = ()=>{ const poz = qi.selectionStart; pickQuery = qi.value;
+    rysujWybierak({tytul, podtytul, pomin, onPick});
+    const nq = document.getElementById("pickQ"); nq.focus(); nq.setSelectionRange(poz, poz); };
+  document.getElementById("pickClose").onclick = closeSheet;
+  document.getElementById("sheetInner").querySelectorAll("[data-pick]").forEach(b=>
+    b.onclick = ()=>{ closeSheet(); onPick(b.dataset.pick); });
+}
+
+/* Podmiana produktu w składniku — gramatura i rola zostają, zmienia się tylko produkt. */
+function zamienSkladnik(iso, slotId, idx){
+  const e = S.plan[iso] && S.plan[iso][slotId]; if(!e) return;
+  const ing = e.ings[idx]; if(!ing) return;
+  const stary = P(ing.pid);
+  wybierzProdukt({
+    tytul: "Zamień składnik",
+    podtytul: stary ? `Zamiast: ${stary.name} (${ing.g} g)` : "",
+    pomin: e.ings.filter((_,i)=>i!==idx).map(i=>i.pid),
+    onPick: (pid)=>{
+      ing.pid = pid; ing.locked = false; ing.pref = false;
+      rebalance(iso); renderWeek(); renderBalance();
+      const nowy = P(pid);
+      toast(`Podmienione na: ${nowy?nowy.name:"produkt"}`);
+    }
+  });
+}
+
 /* Nowy składnik w konkretnym dniu — nie rusza przepisu, tylko ten jeden posiłek. */
 function addIngToPlan(iso, slotId, pid){
   const e = S.plan[iso] && S.plan[iso][slotId]; if(!e) return;
@@ -843,9 +918,9 @@ function renderSwap(iso, slotId){
   const day = S.plan[iso];
   const teraz = day[slotId] ? day[slotId].recipeId : null;
   const slotName = (SLOTS.find(s=>s.id===slotId)||{}).name || "";
-  const q = swapQuery.toLowerCase().trim();
+  const q = bezOgonkow(swapQuery).trim();
   let lista = S.meals.filter(m => swapAll || m.slot===slotId);
-  if(q) lista = lista.filter(m => m.name.toLowerCase().includes(q));
+  if(q) lista = lista.filter(m => bezOgonkow(m.name).includes(q));
   lista = lista.map(m=>{
     const mm = sumMacro(m.ings.map(i=>({pid:i.pid,g:i.g})));
     const fit = fitAfterSwap(iso, slotId, m);
@@ -911,6 +986,16 @@ function stripJson(t){
 }
 /* Bez limitu czasu zerwane połączenie na komórce oznacza kółko kręcące się w nieskończoność —
    fetch sam z siebie nigdy nie odpuszcza. Stąd AbortController przy każdym zapytaniu. */
+/* Adres bez "https://" przeglądarka traktuje jak ścieżkę względną i wysyła POST
+   na własny serwer aplikacji — stąd zagadkowe "405 Not Allowed" od GitHub Pages.
+   Dlatego schemat dokładamy sami przy zapisie. */
+function normProxyUrl(v){
+  v = (v||"").trim().replace(/\/+$/,"");
+  if(!v) return "";
+  if(!/^https?:\/\//i.test(v)) v = "https://" + v;
+  return v;
+}
+
 let aiAbort = null;
 function aiPrzerwij(){ if(aiAbort) aiAbort.abort(); }
 
@@ -926,8 +1011,13 @@ async function aiCall(body, ms=90000){
       body: JSON.stringify(body),
       signal: ac.signal
     });
-    if(!r.ok) throw new Error("HTTP "+r.status+" "+(await r.text()).slice(0,120));
-    const d = await r.json();
+    const tresc = await r.text();
+    if(/^\s*</.test(tresc))
+      throw new Error(`pod tym adresem nie ma proxy — odpowiedział serwer WWW (HTTP ${r.status}). `
+        + `Sprawdź w Ustawieniach, czy adres zaczyna się od https:// i kończy na .workers.dev`);
+    if(!r.ok) throw new Error("HTTP "+r.status+" "+tresc.slice(0,120));
+    let d; try{ d = JSON.parse(tresc); }
+    catch(e){ throw new Error("proxy zwróciło coś, co nie jest JSON-em: "+tresc.slice(0,80)); }
     if(d.error) throw new Error(d.error.message||"błąd API");
     return (d.content||[]).map(c=>c.text||"").join("\n");
   }catch(e){
@@ -1085,8 +1175,12 @@ function renderWeek(){
                                    aria-pressed="${ing.locked?"true":"false"}">${ing.locked?"🔒":"🔓"}</button>`;
             const rm = e.eaten ? "" :
               `<button class="rmbtn" data-rming="${iso}|${s.id}|${idx}" title="Usuń składnik z tego posiłku">×</button>`;
+            const nazwa = e.eaten
+              ? `<span class="nm">${esc(p.name)}${unit}${tag}</span>`
+              : `<button class="nm nmbtn" data-swaping="${iso}|${s.id}|${idx}"
+                   title="Kliknij, żeby podmienić produkt">${esc(p.name)}<span class="sw">⇄</span>${unit}${tag}</button>`;
             return `<li class="${ing.locked?"locked":""}">
-              <span class="nm">${esc(p.name)}${unit}${tag}</span>
+              ${nazwa}
               <span class="stepper">
                 <button class="stp" data-step="${iso}|${s.id}|${idx}|-1" aria-label="Zmniejsz">−</button>
                 <input type="number" data-g="${iso}|${s.id}|${idx}" value="${ing.g}" inputmode="numeric">
@@ -1095,17 +1189,12 @@ function renderWeek(){
               ${btn}${rm}</li>`;
           }).join("")}</ul>
           ${e.eaten ? "" : `<div class="addrow">
-            <select data-addsel="${iso}|${s.id}">
-              <option value="">+ dodaj składnik…</option>
-              ${S.products.slice().sort((a,b)=>a.name.localeCompare(b.name,"pl"))
-                 .map(p=>`<option value="${p.id}">${esc(p.name)}</option>`).join("")}
-            </select>
-            <button class="btn ghost sm" data-addbtn="${iso}|${s.id}">Dodaj</button>
+            <button class="btn ghost sm" data-addbtn="${iso}|${s.id}" style="flex:1">+ dodaj składnik</button>
           </div>`}
           <div class="lockbar">
             <span class="tiny muted">${e.eaten
               ? "Posiłek zjedzony — gramatury zamrożone. Możesz je poprawić na to, co faktycznie zjadłeś; reszta dnia się dopasuje."
-              : `− i + zmieniają porcję o ${"1/5/10 g"} zależnie od wielkości. Każda zmiana blokuje składnik${hasPref?" i zapisuje gramaturę na przyszłość":""}.`}</span>
+              : `Kliknij nazwę, żeby podmienić produkt. − i + zmieniają porcję o 1/5/10 g zależnie od wielkości i blokują składnik${hasPref?", zapisując gramaturę na przyszłość":""}.`}</span>
             <span class="row" style="gap:6px">
               ${nLock?`<button class="btn ghost sm" data-unlockall="${iso}|${s.id}">Zwolnij wszystkie</button>`:""}
               ${hasPref?`<button class="btn ghost sm" data-forget="${e.recipeId}">Zapomnij gramatury</button>`:""}
@@ -1139,10 +1228,12 @@ function renderWeek(){
   wrap.querySelectorAll("[data-rming]").forEach(b=> b.onclick=()=>{
     const [iso,s,idx]=b.dataset.rming.split("|"); rmIngFromPlan(iso,s,+idx); });
   wrap.querySelectorAll("[data-addbtn]").forEach(b=> b.onclick=()=>{
-    const [iso,s]=b.dataset.addbtn.split("|");
-    const sel = wrap.querySelector(`[data-addsel="${iso}|${s}"]`);
-    if(!sel || !sel.value){ toast("Najpierw wybierz produkt z listy."); return; }
-    addIngToPlan(iso, s, sel.value); });
+    const [iso,sl]=b.dataset.addbtn.split("|");
+    const e = S.plan[iso][sl];
+    wybierzProdukt({ tytul:"Dodaj składnik", pomin: e.ings.map(i=>i.pid),
+                     onPick: pid => addIngToPlan(iso, sl, pid) }); });
+  wrap.querySelectorAll("[data-swaping]").forEach(b=> b.onclick=()=>{
+    const [iso,sl,idx]=b.dataset.swaping.split("|"); zamienSkladnik(iso, sl, +idx); });
 
   wrap.querySelectorAll("[data-copymeal]").forEach(b=> b.onclick=()=>{
     const [iso,s]=b.dataset.copymeal.split("|"); copyMeal(iso,s); });
@@ -1214,10 +1305,10 @@ function renderMeals(){
 }
 
 function renderProducts(){
-  const q = document.getElementById("prodSearch").value.toLowerCase().trim();
+  const q = bezOgonkow(document.getElementById("prodSearch").value).trim();
   let html = "";
   CATS.forEach(c=>{
-    const list = S.products.filter(p=>p.cat===c && p.name.toLowerCase().includes(q));
+    const list = S.products.filter(p=>p.cat===c && bezOgonkow(p.name).includes(q));
     if(!list.length) return;
     html += `<div class="card"><div class="eyebrow">${c}</div><div style="margin-top:6px">`;
     list.forEach(p=>{
@@ -1704,12 +1795,14 @@ function bindSettings(){
   });
   ["aiUrl","aiSecret"].forEach(id=>{
     document.getElementById(id).onchange = ()=>{
-      S.ai.url=document.getElementById("aiUrl").value.trim().replace(/\/$/,"");
+      S.ai.url=normProxyUrl(document.getElementById("aiUrl").value);
+      document.getElementById("aiUrl").value = S.ai.url;
       S.ai.secret=document.getElementById("aiSecret").value.trim(); save(); };
   });
   document.getElementById("btnAiTest").onclick = async ()=>{
     const st=document.getElementById("aiStatus");
-    S.ai.url=document.getElementById("aiUrl").value.trim().replace(/\/$/,"");
+    S.ai.url=normProxyUrl(document.getElementById("aiUrl").value);
+    document.getElementById("aiUrl").value = S.ai.url;
     S.ai.secret=document.getElementById("aiSecret").value.trim(); save();
     st.innerHTML=`<span class="spin"></span>sprawdzam…`;
     try{ const t = await aiCall({model:"claude-sonnet-5", max_tokens:20, messages:[{role:"user",content:"Odpowiedz jednym słowem: działa"}]}, 20000);
