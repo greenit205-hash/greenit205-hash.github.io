@@ -99,7 +99,15 @@ label.fld > span{display:block;font-size:12px;color:var(--muted);margin-bottom:4
 .ings{margin:8px 0 0;padding:0;list-style:none;border-top:1px dashed var(--line);padding-top:8px}
 .ings li{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:13.5px;padding:3px 0}
 .ings .nm{flex:1}
-.ings input{width:74px;padding:5px 6px;text-align:right;font-family:var(--mono);font-size:14px}
+.ings input{width:56px;padding:5px 6px;text-align:right;font-family:var(--mono);font-size:14px}
+.ings li{gap:5px}
+.ings .nm{flex:1;min-width:96px}
+.ings .nm .tag{margin-left:5px}
+.stepper{display:flex;align-items:center;gap:3px;flex:none}
+.stp{border:1px solid var(--line);background:var(--surface);border-radius:7px;width:32px;height:32px;
+  padding:0;font-size:19px;line-height:1;color:var(--ink);cursor:pointer;flex:none;
+  -webkit-user-select:none;user-select:none;touch-action:manipulation}
+.stp:active{background:#F6E9F0;border-color:var(--berry);color:var(--berry)}
 .tag{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;padding:2px 5px;border-radius:4px;
   border:1px solid var(--line);color:var(--muted)}
 .tag.k{border-color:var(--berry);color:var(--berry)}
@@ -259,6 +267,17 @@ video{width:100%;border-radius:12px;background:#000}
         <span class="small" id="aiStatus"></span></div>
     </div>
     <div class="card">
+      <h3>Eksport do Google Sheets</h3>
+      <p class="small muted">Cała historia jako arkusz: dni, posiłki i pojedyncze składniki.
+        Wysyłka idzie przez to samo proxy co Claude, ścieżką <code>/export</code>.</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="btn primary sm" id="btnSheets">Wyślij nowe dni</button>
+        <button class="btn ghost sm" id="btnSheetsAll">Wyślij wszystko od nowa</button>
+        <button class="btn ghost sm" id="btnCsv">Pobierz CSV</button>
+      </div>
+      <p class="small" id="sheetsStatus" style="margin:10px 0 0"></p>
+    </div>
+    <div class="card">
       <h3>Dane</h3>
       <p class="small muted">Wszystko siedzi w tym telefonie. Rób kopię co jakiś czas.</p>
       <div class="row" style="gap:8px;flex-wrap:wrap">
@@ -292,7 +311,7 @@ video{width:100%;border-radius:12px;background:#000}
    i czyta etykiety — nigdy nie liczy gramatury.
    ========================================================================== */
 
-const APP_VER = "rev9 · 17.08.2026";   // widoczne w Ustawieniach — po aktualizacji sprawdź, czy się zgadza
+const APP_VER = "rev12 · 18.08.2026";   // widoczne w Ustawieniach — po aktualizacji sprawdź, czy się zgadza
 const KEY   = "jadlospis.v2";
 const SLOTS = [{id:"b",name:"Śniadanie"},{id:"l",name:"Obiad"},{id:"d",name:"Kolacja"}];
 const CATS  = ["mięso i ryby","nabiał i jaja","zboża i pieczywo","warzywa","owoce","tłuszcze i orzechy","strączki","inne"];
@@ -314,11 +333,12 @@ function plDay(iso){ const d=new Date(iso+"T12:00:00"); const n=DOW[d.getDay()];
 function emptyState(){
   return { settings:{kcal:2400,prot:170,fat:75,split:{b:30,l:38,d:32},rules:[]},
            products:[], meals:[], plan:{}, log:[], shopChecked:{}, prefs:{}, clip:null,
-           weekStart: todayISO(), ai:{url:"",secret:""} };
+           weekStart: todayISO(), ai:{url:"",secret:""}, exported:{}, exportedAt:null };
 }
 function load(){
   try{ const raw = localStorage.getItem(KEY); if(raw){ S = JSON.parse(raw);
-       S.prefs = S.prefs || {}; if(!("clip" in S)) S.clip = null; return; } }catch(e){}
+       S.prefs = S.prefs || {}; if(!("clip" in S)) S.clip = null;
+       S.exported = S.exported || {}; if(!("exportedAt" in S)) S.exportedAt = null; return; } }catch(e){}
   S = emptyState(); save();
 }
 
@@ -617,6 +637,25 @@ async function generateWeek(){
 
 /* Czy dzień da się jeszcze doregulować do celu, jeśli w tym miejscu wstawimy dane danie?
    Bierze pod uwagę faktyczny stan dnia: zjedzone i zablokowane liczą się jako sztywne. */
+/* Krok korekty dobrany do wielkości porcji: przy oliwie 1 g, przy ziemniakach 10 g. */
+const krokG = g => g < 20 ? 1 : g < 100 ? 5 : 10;
+
+/* +/- przy gramaturze. Przeliczenie dnia jest opóźnione, żeby dało się klikać seriami
+   bez przebudowy widoku po każdym tapnięciu. */
+let stepT = null;
+function stepIng(iso, slotId, idx, znak, inputEl){
+  const e = S.plan[iso] && S.plan[iso][slotId]; if(!e) return;
+  const ing = e.ings[idx]; if(!ing) return;
+  const nowa = Math.max(1, ing.g + znak * krokG(ing.g));
+  if(nowa === ing.g) return;
+  ing.g = nowa; ing.base = nowa; ing.locked = true; ing.pref = true;
+  if(ing.role !== "staly") prefSet(e.recipeId, ing.pid, nowa);
+  if(inputEl) inputEl.value = nowa;
+  save();
+  clearTimeout(stepT);
+  stepT = setTimeout(()=>{ rebalance(iso); renderWeek(); renderBalance(); renderSettings(); }, 600);
+}
+
 /* Nowy składnik w konkretnym dniu — nie rusza przepisu, tylko ten jeden posiłek. */
 function addIngToPlan(iso, slotId, pid){
   const e = S.plan[iso] && S.plan[iso][slotId]; if(!e) return;
@@ -870,17 +909,37 @@ function stripJson(t){
   const a = s.indexOf("{"), b = s.lastIndexOf("}");
   return (a>=0 && b>a) ? s.slice(a,b+1) : s;
 }
-async function aiCall(body){
+/* Bez limitu czasu zerwane połączenie na komórce oznacza kółko kręcące się w nieskończoność —
+   fetch sam z siebie nigdy nie odpuszcza. Stąd AbortController przy każdym zapytaniu. */
+let aiAbort = null;
+function aiPrzerwij(){ if(aiAbort) aiAbort.abort(); }
+
+async function aiCall(body, ms=90000){
   if(!S.ai.url) throw new Error("Brak adresu proxy");
-  const r = await fetch(S.ai.url, {
-    method:"POST",
-    headers:{"Content-Type":"application/json","X-App-Secret":S.ai.secret||""},
-    body: JSON.stringify(body)
-  });
-  if(!r.ok) throw new Error("HTTP "+r.status+" "+(await r.text()).slice(0,120));
-  const d = await r.json();
-  if(d.error) throw new Error(d.error.message||"błąd API");
-  return (d.content||[]).map(c=>c.text||"").join("\n");
+  const ac = new AbortController();
+  aiAbort = ac;
+  const t = setTimeout(()=>ac.abort(), ms);
+  try{
+    const r = await fetch(S.ai.url, {
+      method:"POST",
+      headers:{"Content-Type":"application/json","X-App-Secret":S.ai.secret||""},
+      body: JSON.stringify(body),
+      signal: ac.signal
+    });
+    if(!r.ok) throw new Error("HTTP "+r.status+" "+(await r.text()).slice(0,120));
+    const d = await r.json();
+    if(d.error) throw new Error(d.error.message||"błąd API");
+    return (d.content||[]).map(c=>c.text||"").join("\n");
+  }catch(e){
+    if(e.name === "AbortError")
+      throw new Error(`brak odpowiedzi w ${Math.round(ms/1000)} s — sprawdź zasięg i spróbuj jeszcze raz`);
+    if(e instanceof TypeError)
+      throw new Error("nie udało się połączyć z proxy — sprawdź internet i adres w Ustawieniach");
+    throw e;
+  }finally{
+    clearTimeout(t);
+    if(aiAbort === ac) aiAbort = null;
+  }
 }
 
 async function aiLabel(base64, mime){
@@ -894,7 +953,7 @@ Jeśli czegoś nie widać, wpisz null. Nie zgaduj marki, której nie widzisz.`;
   const txt = await aiCall({model:"claude-sonnet-5", max_tokens:600, system:sys, messages:[{
     role:"user", content:[
       {type:"image", source:{type:"base64", media_type:mime, data:base64}},
-      {type:"text", text:"Odczytaj wartości odżywcze."}]}]});
+      {type:"text", text:"Odczytaj wartości odżywcze."}]}]}, 60000);
   return JSON.parse(stripJson(txt));
 }
 
@@ -1026,8 +1085,13 @@ function renderWeek(){
                                    aria-pressed="${ing.locked?"true":"false"}">${ing.locked?"🔒":"🔓"}</button>`;
             const rm = e.eaten ? "" :
               `<button class="rmbtn" data-rming="${iso}|${s.id}|${idx}" title="Usuń składnik z tego posiłku">×</button>`;
-            return `<li class="${ing.locked?"locked":""}"><span class="nm">${esc(p.name)}${unit}</span>${tag}
-              <input type="number" data-g="${iso}|${s.id}|${idx}" value="${ing.g}" inputmode="numeric">
+            return `<li class="${ing.locked?"locked":""}">
+              <span class="nm">${esc(p.name)}${unit}${tag}</span>
+              <span class="stepper">
+                <button class="stp" data-step="${iso}|${s.id}|${idx}|-1" aria-label="Zmniejsz">−</button>
+                <input type="number" data-g="${iso}|${s.id}|${idx}" value="${ing.g}" inputmode="numeric">
+                <button class="stp" data-step="${iso}|${s.id}|${idx}|1" aria-label="Zwiększ">+</button>
+              </span>
               ${btn}${rm}</li>`;
           }).join("")}</ul>
           ${e.eaten ? "" : `<div class="addrow">
@@ -1041,7 +1105,7 @@ function renderWeek(){
           <div class="lockbar">
             <span class="tiny muted">${e.eaten
               ? "Posiłek zjedzony — gramatury zamrożone. Możesz je poprawić na to, co faktycznie zjadłeś; reszta dnia się dopasuje."
-              : `Kłódka trzyma gramaturę. Zmiana liczby blokuje automatycznie${hasPref?" i zapisuje ją na przyszłość":""}.`}</span>
+              : `− i + zmieniają porcję o ${"1/5/10 g"} zależnie od wielkości. Każda zmiana blokuje składnik${hasPref?" i zapisuje gramaturę na przyszłość":""}.`}</span>
             <span class="row" style="gap:6px">
               ${nLock?`<button class="btn ghost sm" data-unlockall="${iso}|${s.id}">Zwolnij wszystkie</button>`:""}
               ${hasPref?`<button class="btn ghost sm" data-forget="${e.recipeId}">Zapomnij gramatury</button>`:""}
@@ -1067,6 +1131,10 @@ function renderWeek(){
       if(el) el.scrollIntoView({block:"start", behavior:"smooth"});
     }
   });
+
+  wrap.querySelectorAll("[data-step]").forEach(b=> b.onclick=()=>{
+    const [iso,sl,idx,zn] = b.dataset.step.split("|");
+    stepIng(iso, sl, +idx, +zn, wrap.querySelector(`[data-g="${iso}|${sl}|${idx}"]`)); });
 
   wrap.querySelectorAll("[data-rming]").forEach(b=> b.onclick=()=>{
     const [iso,s,idx]=b.dataset.rming.split("|"); rmIngFromPlan(iso,s,+idx); });
@@ -1294,7 +1362,7 @@ function scanSheet(){
   document.getElementById("scClose").onclick = ()=>{ stopCam(); closeSheet(); };
   document.getElementById("scManual").onclick = ()=>{ const c=prompt("Kod kreskowy:"); if(c) offLookup(c.trim()); };
   document.getElementById("scPhoto").onclick = ()=> document.getElementById("scFile").click();
-  document.getElementById("scFile").onchange = e=>{ const f=e.target.files[0]; if(f) readLabel(f); };
+  document.getElementById("scFile").onchange = e=>{ const f=e.target.files[0]; e.target.value=""; if(f) readLabel(f); };
   document.getElementById("scCam").onclick = startCam;
 }
 let camStream=null, camTimer=null;
@@ -1336,23 +1404,56 @@ async function offLookup(code){
     if(area) area.innerHTML = `<p class="small">Nie ma tego kodu w bazie. Zrób zdjęcie etykiety — Claude ją odczyta.</p>`;
   }
 }
-function readLabel(file){
+/* Zdjęcie z iPhone'a to 3-5 MB, a po zakodowaniu w base64 jeszcze o jedną trzecią więcej —
+   API przyjmuje najwyżej 5 MB, a wysyłka po komórce trwa wieczność. Skalujemy do 1568 px
+   (tyle i tak wykorzystuje model) i zapisujemy jako JPEG, co przy okazji rozwiązuje HEIC. */
+function zmniejszObraz(file, maxPx=1568, jakosc=0.82){
+  return new Promise((ok, err)=>{
+    const rd = new FileReader();
+    rd.onerror = ()=> err(new Error("nie udało się odczytać pliku"));
+    rd.onload = ()=>{
+      const img = new Image();
+      img.onerror = ()=> err(new Error("przeglądarka nie otworzyła tego zdjęcia"));
+      img.onload = ()=>{
+        try{
+          const sk = Math.min(1, maxPx/Math.max(img.width, img.height));
+          const w = Math.max(1, Math.round(img.width*sk)), h = Math.max(1, Math.round(img.height*sk));
+          const c = document.createElement("canvas"); c.width=w; c.height=h;
+          c.getContext("2d").drawImage(img, 0, 0, w, h);
+          const url = c.toDataURL("image/jpeg", jakosc);
+          const b64 = url.split(",")[1];
+          ok({b64, w, h, kb: Math.round(b64.length*0.75/1024)});
+        }catch(e){ err(new Error("nie udało się przeskalować zdjęcia")); }
+      };
+      img.src = rd.result;
+    };
+    rd.readAsDataURL(file);
+  });
+}
+
+async function readLabel(file){
   const area = document.getElementById("scArea");
   if(!S.ai.url){ if(area) area.innerHTML=`<p class="small">Najpierw podłącz AI w Ustawieniach.</p>`; return; }
-  if(area) area.innerHTML = `<p class="small"><span class="spin"></span>Claude czyta etykietę…</p>`;
-  const rd = new FileReader();
-  rd.onload = async ()=>{
-    try{
-      const b64 = rd.result.split(",")[1];
-      const mime = (file.type && file.type.startsWith("image/")) ? file.type : "image/jpeg";
-      const p = await aiLabel(b64, mime);
-      closeSheet();
-      prodSheet(null, {name:p.name||"", kcal:Math.round(p.kcal||0), prot:r1(p.prot), carb:r1(p.carb),
-                       fat:r1(p.fat), cat:CATS.includes(p.cat)?p.cat:"inne", piece:p.piece||null, pack:p.pack||null});
-      toast("Odczytane — sprawdź i zapisz.");
-    }catch(e){ if(area) area.innerHTML = `<p class="small">Nie udało się odczytać (${esc(e.message||"błąd")}). Spróbuj ostrzejszego zdjęcia albo wpisz ręcznie.</p>`; }
-  };
-  rd.readAsDataURL(file);
+  const info = (txt, anuluj)=>{ if(!area) return;
+    area.innerHTML = `<p class="small"><span class="spin"></span>${txt}</p>`
+      + (anuluj ? `<button class="btn ghost sm" id="scStop">Przerwij</button>` : "");
+    const b = document.getElementById("scStop"); if(b) b.onclick = aiPrzerwij; };
+
+  try{
+    info("przygotowuję zdjęcie…", false);
+    const im = await zmniejszObraz(file);
+    info(`Claude czyta etykietę… (${im.kb} KB, ${im.w}×${im.h})`, true);
+    const p = await aiLabel(im.b64, "image/jpeg");
+    closeSheet();
+    prodSheet(null, {name:p.name||"", kcal:Math.round(p.kcal||0), prot:r1(p.prot), carb:r1(p.carb),
+                     fat:r1(p.fat), cat:CATS.includes(p.cat)?p.cat:"inne", piece:p.piece||null, pack:p.pack||null});
+    toast("Odczytane — sprawdź i zapisz.");
+  }catch(e){
+    if(area) area.innerHTML =
+      `<p class="small">Nie udało się: ${esc(e.message||"błąd")}.</p>
+       <p class="tiny muted">Spróbuj jeszcze raz z bliższym, ostrym zdjęciem samej tabeli,
+       albo dodaj produkt ręcznie przyciskiem „Nowy produkt".</p>`;
+  }
 }
 
 /* ---------- AI: nowe przepisy ---------- */
@@ -1448,6 +1549,122 @@ function buildShopping(){
 }
 
 /* ==========================================================================
+   EKSPORT HISTORII DO GOOGLE SHEETS
+   Aplikacja buduje płaskie wiersze (dni / posiłki / składniki) i wysyła je
+   przez ten sam proxy, ścieżką /export. Skrypt po stronie Google nadpisuje
+   wiersze dla przysłanych dat, więc powtórny eksport tego samego dnia
+   aktualizuje go zamiast dublować.
+   ========================================================================== */
+function hashDnia(iso){
+  const day = S.plan[iso];
+  const src = JSON.stringify(SLOTS.map(s=>{
+    const e = day[s.id]; if(!e) return null;
+    return [e.recipeId, e.eaten?1:0, e.ings.map(i=>[i.pid, i.g, i.locked?1:0])];
+  }));
+  let h = 5381;
+  for(let i=0;i<src.length;i++) h = ((h*33) ^ src.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+function dniDoEksportu(wszystkie){
+  return Object.keys(S.plan)
+    .filter(iso => S.plan[iso] && SLOTS.some(s=>S.plan[iso][s.id]))
+    .filter(iso => wszystkie || S.exported[iso] !== hashDnia(iso))
+    .sort();
+}
+function wierszeDlaDni(dni){
+  const dniR=[], posilkiR=[], skladnikiR=[];
+  const t = dayTarget();
+  dni.forEach(iso=>{
+    const day = S.plan[iso];
+    const m = sumMacro(dayIngs(day));
+    const st = dayStatus(iso);
+    const zjedzone = SLOTS.filter(s=>day[s.id] && day[s.id].eaten).length;
+    const ile = SLOTS.filter(s=>day[s.id]).length;
+    dniR.push([iso, DOW[dowOf(iso)], r1(m.kcal), r1(m.prot), r1(m.carb), r1(m.fat),
+               t.kcal, t.prot, t.carb, t.fat,
+               r1(m.kcal-t.kcal), r1(m.prot-t.prot), r1(m.carb-t.carb), r1(m.fat-t.fat),
+               st.ok ? "w punkt" : "poza celem", zjedzone, ile]);
+    SLOTS.forEach(s=>{
+      const e = day[s.id]; if(!e) return;
+      const danie = S.meals.find(x=>x.id===e.recipeId);
+      const mm = sumMacro(e.ings);
+      posilkiR.push([iso, s.name, danie?danie.name:"usunięte danie",
+                     r1(mm.kcal), r1(mm.prot), r1(mm.carb), r1(mm.fat),
+                     e.eaten?"tak":"nie", danie?(danie.rating||3):"", danie?(danie.time||""):""]);
+      e.ings.forEach(i=>{
+        const p = P(i.pid); if(!p) return;
+        const g = i.g/100;
+        skladnikiR.push([iso, s.name, danie?danie.name:"usunięte danie", p.name, p.cat,
+                         r1(i.g), i.role, i.locked?"tak":"nie",
+                         r1(p.kcal*g), r1(p.prot*g), r1(p.carb*g), r1(p.fat*g)]);
+      });
+    });
+  });
+  return {dni:dniR, posilki:posilkiR, skladniki:skladnikiR};
+}
+function wierszeProduktow(){
+  return S.products.map(p=>[p.name, p.cat, p.kcal, p.prot, p.carb, p.fat,
+                            p.piece||"", p.pack||"", p.excluded?"tak":"nie"]);
+}
+async function wyslijPaczke(payload){
+  if(!S.ai.url) throw new Error("Najpierw ustaw adres proxy w sekcji Claude.");
+  const url = S.ai.url.replace(/\/+$/,"") + "/export";
+  const r = await fetch(url, {method:"POST",
+    headers:{"Content-Type":"application/json","X-App-Secret":S.ai.secret||""},
+    body: JSON.stringify(payload)});
+  const txt = await r.text();
+  let d; try{ d = JSON.parse(txt); }catch(e){ throw new Error("Zła odpowiedź: "+txt.slice(0,120)); }
+  if(!r.ok || d.error) throw new Error((d.error && (d.error.message||d.error)) || ("HTTP "+r.status));
+  return d;
+}
+async function eksportujHistorie(wszystkie){
+  const btn = document.getElementById("btnSheets");
+  const st  = document.getElementById("sheetsStatus");
+  const dni = dniDoEksportu(wszystkie);
+  if(!dni.length){ st.textContent = "Nie ma nowych dni do wysłania."; return; }
+  btn.disabled = true; st.dataset.busy = "1";
+  try{
+    const PACZKA = 14;                       // dni na jedno żądanie
+    let wyslane = 0;
+    for(let i=0; i<dni.length; i+=PACZKA){
+      const czesc = dni.slice(i, i+PACZKA);
+      st.innerHTML = `<span class="spin"></span>wysyłam ${i+1}–${Math.min(i+PACZKA,dni.length)} z ${dni.length}…`;
+      const w = wierszeDlaDni(czesc);
+      await wyslijPaczke({
+        typ: "historia",
+        daty: czesc,
+        dni: w.dni, posilki: w.posilki, skladniki: w.skladniki,
+        produkty: i===0 ? wierszeProduktow() : null
+      });
+      czesc.forEach(iso => S.exported[iso] = hashDnia(iso));
+      wyslane += czesc.length;
+      S.exportedAt = new Date().toISOString();
+      save();
+    }
+    st.textContent = `Wysłane: ${wyslane} ${wyslane===1?"dzień":"dni"}. Ostatnio: ${new Date(S.exportedAt).toLocaleString("pl-PL")}.`;
+    toast("Historia w arkuszu zaktualizowana.");
+  }catch(e){
+    st.textContent = "Nie poszło: " + e.message;
+  }finally{
+    btn.disabled = false;
+    delete st.dataset.busy;
+  }
+}
+function pobierzCSV(){
+  const dni = dniDoEksportu(true);
+  if(!dni.length){ toast("Nie ma czego eksportować."); return; }
+  const w = wierszeDlaDni(dni);
+  const naglowki = ["data","pora","danie","produkt","kategoria","gramatura_g","rola","zablokowany",
+                    "kcal","bialko_g","wegle_g","tluszcz_g"];
+  const esc2 = v => `"${String(v).replace(/"/g,'""')}"`;
+  const csv = "\uFEFF" + [naglowki, ...w.skladniki].map(r=>r.map(esc2).join(";")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], {type:"text/csv;charset=utf-8"}));
+  a.download = `jadlospis-skladniki-${todayISO()}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+/* ==========================================================================
    USTAWIENIA / IMPORT
    ========================================================================== */
 function renderSettings(){
@@ -1464,6 +1681,15 @@ function renderSettings(){
   try{ localStorage.setItem("__t","1"); localStorage.removeItem("__t"); }catch(e){ ok="brak zapisu — dane znikną po zamknięciu"; }
   g("storeInfo").textContent = `Wersja aplikacji: ${APP_VER}
 ${S.products.length} produktów · ${S.meals.length} dań · ${Object.keys(S.plan).length} dni w planie · ${(S.log||[]).length} wpisów historii · ${ok}`;
+  const doWyslania = dniDoEksportu(false).length;
+  const wSumie = Object.keys(S.plan).filter(iso=>S.plan[iso]&&SLOTS.some(x=>S.plan[iso][x.id])).length;
+  const ss = g("sheetsStatus");
+  if(ss && !ss.dataset.busy){
+    ss.textContent = wSumie
+      ? `${wSumie} dni w pamięci · ${doWyslania} do wysłania`
+        + (S.exportedAt ? ` · ostatni eksport ${new Date(S.exportedAt).toLocaleDateString("pl-PL")}` : " · jeszcze nic nie wysłane")
+      : "Brak dni do wysłania — najpierw ułóż tydzień.";
+  }
   const pc = prefCount();
   const pb = g("btnForgetAll");
   if(pb){ pb.style.display = pc ? "" : "none"; pb.textContent = `Zapomnij gramatury (${pc})`; }
@@ -1486,7 +1712,7 @@ function bindSettings(){
     S.ai.url=document.getElementById("aiUrl").value.trim().replace(/\/$/,"");
     S.ai.secret=document.getElementById("aiSecret").value.trim(); save();
     st.innerHTML=`<span class="spin"></span>sprawdzam…`;
-    try{ const t = await aiCall({model:"claude-sonnet-5", max_tokens:20, messages:[{role:"user",content:"Odpowiedz jednym słowem: działa"}]});
+    try{ const t = await aiCall({model:"claude-sonnet-5", max_tokens:20, messages:[{role:"user",content:"Odpowiedz jednym słowem: działa"}]}, 20000);
       st.textContent = "✓ "+t.trim().slice(0,40); st.style.color="var(--ok)";
     }catch(e){ st.textContent = "✗ "+(e.message||"błąd"); st.style.color="var(--alert)"; }
   };
@@ -1585,6 +1811,12 @@ document.getElementById("btnForgetAll").onclick = ()=>{
   if(!confirm("Usunąć wszystkie zapamiętane gramatury? Dania wrócą do wartości z przepisu.")) return;
   S.prefs = {}; save(); renderSettings(); renderWeek(); toast("Zapamiętane gramatury wyczyszczone.");
 };
+document.getElementById("btnSheets").onclick    = ()=> eksportujHistorie(false);
+document.getElementById("btnSheetsAll").onclick = ()=>{
+  if(!confirm("Wysłać wszystkie dni od nowa? Wiersze dla tych dat zostaną w arkuszu nadpisane.")) return;
+  eksportujHistorie(true);
+};
+document.getElementById("btnCsv").onclick = pobierzCSV;
 document.getElementById("btnHistory").onclick = renderHistory;
 document.getElementById("btnShop").onclick = buildShopping;
 bindSettings();
