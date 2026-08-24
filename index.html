@@ -112,6 +112,11 @@ label.fld > span{display:block;font-size:12px;color:var(--muted);margin-bottom:4
   cursor:pointer;display:block;width:100%}
 .nmbtn .sw{color:var(--berry);font-size:12px;margin-left:5px;opacity:.75}
 .nmbtn:active{color:var(--berry)}
+.weeknav{display:flex;align-items:center;gap:6px;margin-top:4px}
+.weeknav input{flex:1;min-width:0}
+.weeknav .btn{width:36px;padding:0;height:36px;font-size:18px;line-height:1;flex:none}
+.wkinfo{font-size:12px;color:var(--muted);margin-top:6px}
+.wkinfo b{color:var(--berry);font-weight:600}
 .tag{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;padding:2px 5px;border-radius:4px;
   border:1px solid var(--line);color:var(--muted)}
 .tag.k{border-color:var(--berry);color:var(--berry)}
@@ -196,7 +201,13 @@ video{width:100%;border-radius:12px;background:#000}
       <div class="between">
         <div style="flex:1">
           <div class="eyebrow">Plan od</div>
-          <input type="date" id="weekStart" style="margin-top:4px">
+          <div class="weeknav">
+            <button class="btn ghost sm" id="wkPrev" title="Poprzedni tydzień">‹</button>
+            <input type="date" id="weekStart">
+            <button class="btn ghost sm" id="wkNext" title="Następny tydzień">›</button>
+          </div>
+          <div class="wkinfo" id="wkInfo"></div>
+          <button class="btn ghost sm" id="wkToday" style="margin-top:6px">Wróć do bieżącego tygodnia</button>
         </div>
         <button class="btn primary" id="btnGen">Ułóż tydzień</button>
       </div>
@@ -274,6 +285,10 @@ video{width:100%;border-radius:12px;background:#000}
       <h3>Eksport do Google Sheets</h3>
       <p class="small muted">Cała historia jako arkusz: dni, posiłki i pojedyncze składniki.
         Wysyłka idzie przez to samo proxy co Claude, ścieżką <code>/export</code>.</p>
+      <label class="fld"><span>Czyje to dane</span>
+        <input type="text" id="osobaIn" placeholder="np. Marcin" autocapitalize="words"></label>
+      <p class="tiny muted" style="margin:-4px 0 8px">Trafia do kolumny „osoba" w arkuszu.
+        Dzięki temu dwie osoby mogą wysyłać do jednego arkusza i nie kasować sobie wierszy.</p>
       <div class="row" style="gap:8px;flex-wrap:wrap">
         <button class="btn primary sm" id="btnSheets">Wyślij nowe dni</button>
         <button class="btn ghost sm" id="btnSheetsAll">Wyślij wszystko od nowa</button>
@@ -287,10 +302,14 @@ video{width:100%;border-radius:12px;background:#000}
       <div class="row" style="gap:8px;flex-wrap:wrap">
         <button class="btn ghost sm" id="btnExport">Zapisz kopię</button>
         <button class="btn ghost sm" id="btnImport">Wczytaj kopię / paczkę</button>
+        <button class="btn ghost sm" id="btnShareBase">Udostępnij bazę</button>
         <button class="btn ghost sm" id="btnForgetAll" style="display:none">Zapomnij gramatury</button>
         <button class="btn ghost sm" id="btnReset">Wyczyść wszystko</button>
       </div>
       <input type="file" id="fileIn" accept="application/json" style="display:none">
+      <p class="tiny muted" style="margin-top:8px">„Zapisz kopię" to całość: plan, ustawienia i hasło do proxy —
+        do przeniesienia na własny nowy telefon. „Udostępnij bazę" to same produkty i dania,
+        bez planu i haseł — to daje się drugiej osobie.</p>
       <p class="tiny muted" id="storeInfo" style="margin-top:10px;white-space:pre-line"></p>
     </div>
   </section>
@@ -315,7 +334,7 @@ video{width:100%;border-radius:12px;background:#000}
    i czyta etykiety — nigdy nie liczy gramatury.
    ========================================================================== */
 
-const APP_VER = "rev14 · 19.08.2026";   // widoczne w Ustawieniach — po aktualizacji sprawdź, czy się zgadza
+const APP_VER = "rev17 · 24.08.2026";   // widoczne w Ustawieniach — po aktualizacji sprawdź, czy się zgadza
 const KEY   = "jadlospis.v2";
 const SLOTS = [{id:"b",name:"Śniadanie"},{id:"l",name:"Obiad"},{id:"d",name:"Kolacja"}];
 const CATS  = ["mięso i ryby","nabiał i jaja","zboża i pieczywo","warzywa","owoce","tłuszcze i orzechy","strączki","inne"];
@@ -330,6 +349,13 @@ const r1  = v => Math.round((+v||0)*10)/10;
 function todayISO(d){ const x=d||new Date(); return new Date(x-x.getTimezoneOffset()*6e4).toISOString().slice(0,10); }
 function addDays(iso,n){ const d=new Date(iso+"T12:00:00"); d.setDate(d.getDate()+n); return todayISO(d); }
 function dowOf(iso){ return new Date(iso+"T12:00:00").getDay(); }
+/* Poniedziałek tygodnia, w którym leży podana data. */
+function poczatekTygodnia(iso){
+  const d = new Date(iso+"T12:00:00");
+  const dow = (d.getDay() + 6) % 7;          // 0 = poniedziałek
+  return addDays(iso, -dow);
+}
+
 function plDay(iso){ const d=new Date(iso+"T12:00:00"); const n=DOW[d.getDay()];
   return n[0].toUpperCase()+n.slice(1)+", "+d.getDate()+"."+String(d.getMonth()+1).padStart(2,"0"); }
 
@@ -337,12 +363,17 @@ function plDay(iso){ const d=new Date(iso+"T12:00:00"); const n=DOW[d.getDay()];
 function emptyState(){
   return { settings:{kcal:2400,prot:170,fat:75,split:{b:30,l:38,d:32},rules:[]},
            products:[], meals:[], plan:{}, log:[], shopChecked:{}, prefs:{}, clip:null,
-           weekStart: todayISO(), ai:{url:"",secret:""}, exported:{}, exportedAt:null };
+           weekStart: todayISO(), ai:{url:"",secret:""}, exported:{}, exportedAt:null, osoba:"" };
 }
 function load(){
   try{ const raw = localStorage.getItem(KEY); if(raw){ S = JSON.parse(raw);
        S.prefs = S.prefs || {}; if(!("clip" in S)) S.clip = null;
-       S.exported = S.exported || {}; if(!("exportedAt" in S)) S.exportedAt = null; return; } }catch(e){}
+       S.exported = S.exported || {}; if(!("exportedAt" in S)) S.exportedAt = null;
+       if(!("osoba" in S)) S.osoba = "";
+       /* stary format: płaska mapa pid->true, wspólna dla wszystkich tygodni */
+       const sc = S.shopChecked || {};
+       if(Object.values(sc).some(v => typeof v !== "object")) S.shopChecked = {};
+       return; } }catch(e){}
   S = emptyState(); save();
 }
 
@@ -628,15 +659,23 @@ async function generateWeek(){
       SLOTS.forEach(s=>{ if(sel[i][s.id]) recent[s.id].push(sel[i][s.id]); });
     }
   }
+  /* Posiłek oznaczony jako zjedzony to fakt — także wtedy, gdy dotyczy jutra i stoi
+     odważony w lodówce. Układanie tygodnia od nowa nie ma prawa go skasować. */
+  let zachowane = 0;
   for(let i=0;i<7;i++){
     const iso = addDays(start,i);
     const day = buildDay(sel[i]);
     if(!Object.keys(day).length) continue;
+    const stary = S.plan[iso];
+    if(stary) SLOTS.forEach(s=>{
+      if(stary[s.id] && stary[s.id].eaten){ day[s.id] = stary[s.id]; zachowane++; }
+    });
     S.plan[iso] = day;
     solveDay(day, dayTarget());
   }
-  save(); renderWeek(); renderShopSelectors();
-  toast(viaAI ? "Tydzień ułożony przez Claude'a." : "Tydzień ułożony.");
+  save(); renderWeek(); renderShopSelectors(); renderBalance();
+  toast((viaAI ? "Tydzień ułożony przez Claude'a." : "Tydzień ułożony.")
+        + (zachowane ? ` Zachowane zjedzone: ${zachowane}.` : ""));
 }
 
 /* Czy dzień da się jeszcze doregulować do celu, jeśli w tym miejscu wstawimy dane danie?
@@ -1100,6 +1139,15 @@ function renderWeek(){
   const scrollY = window.scrollY;
   const start = S.weekStart || todayISO();
   document.getElementById("weekStart").value = start;
+  const inf = document.getElementById("wkInfo");
+  if(inf){
+    const wTym = [];
+    for(let i=0;i<7;i++){ const d=addDays(start,i); if(S.plan[d]) wTym.push(d); }
+    const biezacy = poczatekTygodnia(todayISO()) === poczatekTygodnia(start);
+    inf.innerHTML = `${plDay(start)} – ${plDay(addDays(start,6))} · `
+      + (wTym.length ? `${wTym.length} z 7 dni zaplanowane` : "nic nie zaplanowane")
+      + (biezacy ? ` · <b>bieżący tydzień</b>` : "");
+  }
   /* jeden kafelek naraz; domyślnie dzisiejszy, a jak go nie ma — pierwszy z tygodnia */
   const dniTygodnia = [];
   for(let i=0;i<7;i++){ const d=addDays(start,i); if(S.plan[d]) dniTygodnia.push(d); }
@@ -1193,7 +1241,7 @@ function renderWeek(){
           </div>`}
           <div class="lockbar">
             <span class="tiny muted">${e.eaten
-              ? "Posiłek zjedzony — gramatury zamrożone. Możesz je poprawić na to, co faktycznie zjadłeś; reszta dnia się dopasuje."
+              ? "Posiłek zamrożony — solver go nie rusza i nie skasuje przy układaniu tygodnia. Gramatury możesz poprawić na to, co faktycznie odważyłeś; reszta dnia się dopasuje."
               : `Kliknij nazwę, żeby podmienić produkt. − i + zmieniają porcję o 1/5/10 g zależnie od wielkości i blokują składnik${hasPref?", zapisując gramaturę na przyszłość":""}.`}</span>
             <span class="row" style="gap:6px">
               ${nLock?`<button class="btn ghost sm" data-unlockall="${iso}|${s.id}">Zwolnij wszystkie</button>`:""}
@@ -1205,8 +1253,26 @@ function renderWeek(){
     });
     html += `</div></div>`;
   }
-  wrap.innerHTML = any ? html
-    : `<div class="empty"><h3>Pusty tydzień</h3><p class="small">Wybierz dzień startu i naciśnij „Ułóż tydzień”.</p></div>`;
+  /* Plan nie znika — widok pokazuje 7 dni od wybranej daty. Jeśli tu pusto,
+     a w pamięci są inne dni, mówimy o tym wprost zamiast sugerować, że plan przepadł. */
+  const wszystkieDni = Object.keys(S.plan).filter(d=>S.plan[d]&&SLOTS.some(x=>S.plan[d][x.id])).sort();
+  if(any){
+    wrap.innerHTML = html;
+  } else if(wszystkieDni.length){
+    const pierwszy = wszystkieDni[0], ostatni = wszystkieDni[wszystkieDni.length-1];
+    wrap.innerHTML = `<div class="empty"><h3>W tym tygodniu nic nie zaplanowane</h3>
+      <p class="small">W pamięci masz ${wszystkieDni.length} dni — od ${plDay(pierwszy)} do ${plDay(ostatni)}.
+      Przewiń strzałkami ‹ › nad kalendarzem albo skocz od razu:</p>
+      <div class="row" style="gap:8px;flex-wrap:wrap;justify-content:center">
+        <button class="btn ghost sm" data-goto="${pierwszy}">${plDay(pierwszy)}</button>
+        <button class="btn ghost sm" data-goto="${ostatni}">${plDay(ostatni)}</button>
+      </div></div>`;
+  } else {
+    wrap.innerHTML = `<div class="empty"><h3>Pusty tydzień</h3><p class="small">Wybierz dzień startu i naciśnij „Ułóż tydzień”.</p></div>`;
+  }
+  wrap.querySelectorAll("[data-goto]").forEach(b=> b.onclick=()=>{
+    S.weekStart = poczatekTygodnia(b.dataset.goto); openDay = null;
+    save(); renderWeek(); renderBalance(); });
 
   wrap.querySelectorAll("details[data-key]").forEach(d=>{ if(open.has(d.dataset.key)) d.open = true; });
   if(open.size && document.querySelector("[data-key]")) window.scrollTo(0, scrollY);
@@ -1587,6 +1653,17 @@ function renderShopSelectors(){
   from.value = days.includes(fv)?fv:days[0];
   to.value   = days.includes(tv)?tv:days[Math.min(6,days.length-1)];
 }
+/* Odhaczenia trzymamy osobno dla każdego zakresu dat. Wcześniej były wspólne dla
+   całej aplikacji, więc lista na nowy tydzień otwierała się z połową pozycji już
+   skreślonych — z zakupów sprzed tygodnia. */
+const kluczZakresu = (from, to) => `${from}|${to}`;
+function znaczniki(from, to){
+  const k = kluczZakresu(from, to);
+  const v = S.shopChecked[k];
+  if(!v || typeof v !== "object") S.shopChecked[k] = {};
+  return S.shopChecked[k];
+}
+
 let shopTab = "all";     // "all" = wszystkie, "missing" = jeszcze niekupione
 function buildShopping(){
   const from=document.getElementById("shopFrom").value, to=document.getElementById("shopTo").value;
@@ -1597,9 +1674,10 @@ function buildShopping(){
     dayIngs(S.plan[d]).forEach(i=> tot[i.pid]=(tot[i.pid]||0)+i.g); });
 
   const wszystkie = Object.keys(tot).map(id=>P(id)).filter(Boolean);
-  const kupione   = wszystkie.filter(p=> S.shopChecked[p.id]).length;
+  const zazn      = znaczniki(from, to);
+  const kupione   = wszystkie.filter(p=> zazn[p.id]).length;
   const brakuje   = wszystkie.length - kupione;
-  const widoczne  = shopTab==="missing" ? wszystkie.filter(p=> !S.shopChecked[p.id]) : wszystkie;
+  const widoczne  = shopTab==="missing" ? wszystkie.filter(p=> !zazn[p.id]) : wszystkie;
 
   let html = `<div class="hfilter" style="margin:0 2px 8px">
       <button data-stab="all" class="${shopTab==="all"?"on":""}">wszystkie (${wszystkie.length})</button>
@@ -1617,7 +1695,7 @@ function buildShopping(){
       let amount = g>=1000 ? (g/1000).toFixed(2)+" kg" : g+" g";
       if(p.pack) amount = `${Math.ceil(g/p.pack)} × opak. (${amount})`;
       else if(p.piece) amount = `${Math.ceil(g/p.piece)} szt (${amount})`;
-      const done=!!S.shopChecked[p.id];
+      const done=!!zazn[p.id];
       sekcje += `<div class="item ${done?"done":""}">
         <label class="row" style="gap:10px;flex:1"><input type="checkbox" class="chk" data-shop="${p.id}" ${done?"checked":""}>
           <span class="t">${esc(p.name)}</span></label>
@@ -1633,10 +1711,12 @@ function buildShopping(){
   wrap.innerHTML = html + sekcje;
   wrap.querySelectorAll("[data-stab]").forEach(b=> b.onclick=()=>{ shopTab=b.dataset.stab; buildShopping(); });
   const clr = wrap.querySelector("[data-sclear]");
-  if(clr) clr.onclick = ()=>{ wszystkie.forEach(p=> delete S.shopChecked[p.id]); save(); buildShopping();
+  if(clr) clr.onclick = ()=>{ S.shopChecked[kluczZakresu(from,to)] = {}; save(); buildShopping();
                               toast("Zaznaczenia wyczyszczone."); };
   wrap.querySelectorAll("[data-shop]").forEach(cb=> cb.onchange=()=>{
-    S.shopChecked[cb.dataset.shop]=cb.checked; save(); buildShopping(); });
+    const z = znaczniki(from, to);
+    if(cb.checked) z[cb.dataset.shop] = true; else delete z[cb.dataset.shop];
+    save(); buildShopping(); });
 }
 
 /* ==========================================================================
@@ -1646,6 +1726,10 @@ function buildShopping(){
    wiersze dla przysłanych dat, więc powtórny eksport tego samego dnia
    aktualizuje go zamiast dublować.
    ========================================================================== */
+/* Bez tego dwie osoby wysyłające do jednego arkusza kasowałyby sobie nawzajem
+   wiersze — skrypt czyści dane po dacie, więc potrzebuje jeszcze wiedzieć, czyje. */
+const osobaLub = () => (S.osoba || "").trim() || "ja";
+
 function hashDnia(iso){
   const day = S.plan[iso];
   const src = JSON.stringify(SLOTS.map(s=>{
@@ -1671,7 +1755,7 @@ function wierszeDlaDni(dni){
     const st = dayStatus(iso);
     const zjedzone = SLOTS.filter(s=>day[s.id] && day[s.id].eaten).length;
     const ile = SLOTS.filter(s=>day[s.id]).length;
-    dniR.push([iso, DOW[dowOf(iso)], r1(m.kcal), r1(m.prot), r1(m.carb), r1(m.fat),
+    dniR.push([iso, osobaLub(), DOW[dowOf(iso)], r1(m.kcal), r1(m.prot), r1(m.carb), r1(m.fat),
                t.kcal, t.prot, t.carb, t.fat,
                r1(m.kcal-t.kcal), r1(m.prot-t.prot), r1(m.carb-t.carb), r1(m.fat-t.fat),
                st.ok ? "w punkt" : "poza celem", zjedzone, ile]);
@@ -1679,13 +1763,13 @@ function wierszeDlaDni(dni){
       const e = day[s.id]; if(!e) return;
       const danie = S.meals.find(x=>x.id===e.recipeId);
       const mm = sumMacro(e.ings);
-      posilkiR.push([iso, s.name, danie?danie.name:"usunięte danie",
+      posilkiR.push([iso, osobaLub(), s.name, danie?danie.name:"usunięte danie",
                      r1(mm.kcal), r1(mm.prot), r1(mm.carb), r1(mm.fat),
                      e.eaten?"tak":"nie", danie?(danie.rating||3):"", danie?(danie.time||""):""]);
       e.ings.forEach(i=>{
         const p = P(i.pid); if(!p) return;
         const g = i.g/100;
-        skladnikiR.push([iso, s.name, danie?danie.name:"usunięte danie", p.name, p.cat,
+        skladnikiR.push([iso, osobaLub(), s.name, danie?danie.name:"usunięte danie", p.name, p.cat,
                          r1(i.g), i.role, i.locked?"tak":"nie",
                          r1(p.kcal*g), r1(p.prot*g), r1(p.carb*g), r1(p.fat*g)]);
       });
@@ -1723,6 +1807,7 @@ async function eksportujHistorie(wszystkie){
       const w = wierszeDlaDni(czesc);
       await wyslijPaczke({
         typ: "historia",
+        osoba: osobaLub(),
         daty: czesc,
         dni: w.dni, posilki: w.posilki, skladniki: w.skladniki,
         produkty: i===0 ? wierszeProduktow() : null
@@ -1741,6 +1826,17 @@ async function eksportujHistorie(wszystkie){
     delete st.dataset.busy;
   }
 }
+/* Kopia zapasowa zawiera plan, ustawienia i hasło do proxy — nie nadaje się do
+   przekazania drugiej osobie. Paczka to sama baza: produkty i dania. */
+function udostepnijBaze(){
+  const paczka = {pack:true, name:`Baza z aplikacji (${todayISO()})`,
+                  products:S.products, meals:S.meals};
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(paczka,null,1)],{type:"application/json"}));
+  a.download=`jadlospis-baza-${todayISO()}.json`; a.click(); URL.revokeObjectURL(a.href);
+  toast(`Paczka: ${S.products.length} produktów, ${S.meals.length} dań.`);
+}
+
 function pobierzCSV(){
   const dni = dniDoEksportu(true);
   if(!dni.length){ toast("Nie ma czego eksportować."); return; }
@@ -1772,6 +1868,7 @@ function renderSettings(){
   try{ localStorage.setItem("__t","1"); localStorage.removeItem("__t"); }catch(e){ ok="brak zapisu — dane znikną po zamknięciu"; }
   g("storeInfo").textContent = `Wersja aplikacji: ${APP_VER}
 ${S.products.length} produktów · ${S.meals.length} dań · ${Object.keys(S.plan).length} dni w planie · ${(S.log||[]).length} wpisów historii · ${ok}`;
+  const oi = g("osobaIn"); if(oi && document.activeElement !== oi) oi.value = S.osoba || "";
   const doWyslania = dniDoEksportu(false).length;
   const wSumie = Object.keys(S.plan).filter(iso=>S.plan[iso]&&SLOTS.some(x=>S.plan[iso][x.id])).length;
   const ss = g("sheetsStatus");
@@ -1904,12 +2001,25 @@ document.getElementById("btnForgetAll").onclick = ()=>{
   if(!confirm("Usunąć wszystkie zapamiętane gramatury? Dania wrócą do wartości z przepisu.")) return;
   S.prefs = {}; save(); renderSettings(); renderWeek(); toast("Zapamiętane gramatury wyczyszczone.");
 };
+document.getElementById("btnShareBase").onclick = udostepnijBaze;
+document.getElementById("osobaIn").onchange = e=>{ S.osoba = e.target.value.trim(); save(); };
 document.getElementById("btnSheets").onclick    = ()=> eksportujHistorie(false);
 document.getElementById("btnSheetsAll").onclick = ()=>{
   if(!confirm("Wysłać wszystkie dni od nowa? Wiersze dla tych dat zostaną w arkuszu nadpisane.")) return;
   eksportujHistorie(true);
 };
 document.getElementById("btnCsv").onclick = pobierzCSV;
+function przesunTydzien(dni){
+  const teraz = S.weekStart || todayISO();
+  S.weekStart = addDays(teraz, dni);
+  openDay = null; save(); renderWeek(); renderBalance();
+}
+document.getElementById("wkPrev").onclick  = ()=> przesunTydzien(-7);
+document.getElementById("wkNext").onclick  = ()=> przesunTydzien(7);
+document.getElementById("wkToday").onclick = ()=>{
+  S.weekStart = poczatekTygodnia(todayISO());
+  openDay = null; save(); renderWeek(); renderBalance();
+};
 document.getElementById("btnHistory").onclick = renderHistory;
 document.getElementById("btnShop").onclick = buildShopping;
 bindSettings();

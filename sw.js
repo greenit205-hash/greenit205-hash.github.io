@@ -1,5 +1,5 @@
 /* Offline dla aplikacji Jadłospis. Po każdej zmianie plików podnieś numer CACHE. */
-const CACHE = "jadlospis-v14";
+const CACHE = "jadlospis-v17";
 const CORE = ["./", "./index.html", "./manifest.json", "./icon.svg", "./icon-maskable.svg"];
 
 self.addEventListener("install", e => {
