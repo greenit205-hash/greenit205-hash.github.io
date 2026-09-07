@@ -336,7 +336,7 @@ video{width:100%;border-radius:12px;background:#000}
    i czyta etykiety — nigdy nie liczy gramatury.
    ========================================================================== */
 
-const APP_VER = "rev18 · 05.09.2026";   // widoczne w Ustawieniach — po aktualizacji sprawdź, czy się zgadza
+const APP_VER = "rev19 · 05.09.2026";   // widoczne w Ustawieniach — po aktualizacji sprawdź, czy się zgadza
 const KEY   = "jadlospis.v2";
 const SLOTS = [{id:"b",name:"Śniadanie"},{id:"l",name:"Obiad"},{id:"d",name:"Kolacja"}];
 const CATS  = ["mięso i ryby","nabiał i jaja","zboża i pieczywo","warzywa","owoce","tłuszcze i orzechy","strączki","inne"];
@@ -1297,7 +1297,7 @@ function renderWeek(){
     renderWeek(); renderBalance();
     if(openDay){
       const el = document.querySelector(`[data-tile="${openDay}"]`);
-      if(el) el.scrollIntoView({block:"start", behavior:"smooth"});
+      if(el && el.scrollIntoView) el.scrollIntoView({block:"start", behavior:"smooth"});
     }
   });
 
@@ -1390,10 +1390,19 @@ function renderMeals(){
    energii, a nie do węglowodanów; zaokrąglenia na etykiecie), ale duży zwykle znaczy
    literówkę albo źle odczytaną etykietę. */
 function kcalZMakro(p){ return p.prot*4 + p.carb*4 + p.fat*9; }
+/* Sam procent nie wystarczy: przyprawy mają etykiety mocno niespójne, ale ważą 1-2 g
+   i na dzień nie robią nic. Liczy się rozjazd przy porcji, jaką produkt realnie ma
+   w Twoich daniach. */
+function typowaPorcja(pid){
+  const g = [];
+  S.meals.forEach(m => m.ings.forEach(i => { if(i.pid===pid) g.push(i.g); }));
+  if(!g.length) return 100;
+  g.sort((a,b)=>a-b);
+  return g[Math.floor(g.length/2)];
+}
 function niespojnosc(p){
   const d = p.kcal - kcalZMakro(p);
-  const prog = Math.max(12, p.kcal * 0.08);
-  return Math.abs(d) > prog ? d : 0;
+  return Math.abs(d * typowaPorcja(p.id) / 100) >= 15 ? d : 0;
 }
 
 let prodTylkoNiespojne = false;
