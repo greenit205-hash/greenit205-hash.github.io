@@ -117,6 +117,7 @@ label.fld > span{display:block;font-size:12px;color:var(--muted);margin-bottom:4
 .weeknav .btn{width:36px;padding:0;height:36px;font-size:18px;line-height:1;flex:none}
 .wkinfo{font-size:12px;color:var(--muted);margin-top:6px}
 .wkinfo b{color:var(--berry);font-weight:600}
+.warn{color:#8C3A3A;line-height:1.35;display:block}
 .tag{font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;padding:2px 5px;border-radius:4px;
   border:1px solid var(--line);color:var(--muted)}
 .tag.k{border-color:var(--berry);color:var(--berry)}
@@ -193,6 +194,7 @@ video{width:100%;border-radius:12px;background:#000}
 <header>
   <div class="hrow"><h1 id="hTitle">Tydzień</h1><div class="hsub" id="hDate"></div></div>
   <div class="balance" id="balance"></div>
+  <div class="tiny" id="balWarn" style="padding:0 16px 8px"></div>
 </header>
 
 <main>
@@ -334,7 +336,7 @@ video{width:100%;border-radius:12px;background:#000}
    i czyta etykiety — nigdy nie liczy gramatury.
    ========================================================================== */
 
-const APP_VER = "rev17 · 24.08.2026";   // widoczne w Ustawieniach — po aktualizacji sprawdź, czy się zgadza
+const APP_VER = "rev18 · 05.09.2026";   // widoczne w Ustawieniach — po aktualizacji sprawdź, czy się zgadza
 const KEY   = "jadlospis.v2";
 const SLOTS = [{id:"b",name:"Śniadanie"},{id:"l",name:"Obiad"},{id:"d",name:"Kolacja"}];
 const CATS  = ["mięso i ryby","nabiał i jaja","zboża i pieczywo","warzywa","owoce","tłuszcze i orzechy","strączki","inne"];
@@ -1131,6 +1133,18 @@ function renderBalance(){
     </div>`;
   document.getElementById("hDate").textContent =
     plDay(iso) + (iso===todayISO() ? " · dziś" : "");
+
+  /* Suma kcal to suma z etykiet, a makro to osobna suma B/W/T. Gdy mocno się rozjeżdżają,
+     wygląda to jak błąd solvera, a jest błąd w danych produktu. */
+  const zMakro = m.prot*4 + m.carb*4 + m.fat*9;
+  const roz = m.kcal - zMakro;
+  const bw = document.getElementById("balWarn");
+  if(bw) bw.innerHTML = (m.kcal && Math.abs(roz) > 60)
+    ? `<span class="warn">Kalorie z etykiet są o ${roz>0?"+":""}${Math.round(roz)} kcal
+       ${roz>0?"wyższe":"niższe"} niż wychodzi z makro (${Math.round(zMakro)} kcal).
+       Zwykle winny jest produkt, którego kcal nie zgadzają się z jego B/W/T —
+       Produkty → zakładka „kcal ≠ makro".</span>`
+    : "";
 }
 
 function renderWeek(){
@@ -1370,17 +1384,38 @@ function renderMeals(){
   wrap.querySelectorAll("[data-meal]").forEach(b=> b.onclick=()=>mealSheet(b.dataset.meal));
 }
 
+/* Kalorie w nagłówku dnia to suma kcal z etykiet, a makro to osobna suma B/W/T.
+   Jeśli produkt ma kcal, które nie zgadzają się z jego własnym makro, obie liczby
+   zaczynają się rozjeżdżać. Trochę rozjazdu jest normalne (błonnik wliczany do
+   energii, a nie do węglowodanów; zaokrąglenia na etykiecie), ale duży zwykle znaczy
+   literówkę albo źle odczytaną etykietę. */
+function kcalZMakro(p){ return p.prot*4 + p.carb*4 + p.fat*9; }
+function niespojnosc(p){
+  const d = p.kcal - kcalZMakro(p);
+  const prog = Math.max(12, p.kcal * 0.08);
+  return Math.abs(d) > prog ? d : 0;
+}
+
+let prodTylkoNiespojne = false;
 function renderProducts(){
   const q = bezOgonkow(document.getElementById("prodSearch").value).trim();
-  let html = "";
+  const podejrzane = S.products.filter(p=>niespojnosc(p));
+  let html = podejrzane.length ? `<div class="hfilter" style="margin:0 2px 8px">
+      <button data-ptab="all" class="${prodTylkoNiespojne?"":"on"}">wszystkie (${S.products.length})</button>
+      <button data-ptab="bad" class="${prodTylkoNiespojne?"on":""}">kcal ≠ makro (${podejrzane.length})</button>
+    </div>` : "";
   CATS.forEach(c=>{
-    const list = S.products.filter(p=>p.cat===c && bezOgonkow(p.name).includes(q));
+    const list = S.products.filter(p=>p.cat===c && bezOgonkow(p.name).includes(q)
+                                     && (!prodTylkoNiespojne || niespojnosc(p)));
     if(!list.length) return;
     html += `<div class="card"><div class="eyebrow">${c}</div><div style="margin-top:6px">`;
     list.forEach(p=>{
       html += `<div class="item ${p.excluded?"done":""}"><div>
         <div class="t">${esc(p.name)}</div>
         <div class="tiny muted num">${p.kcal} kcal · B${p.prot} W${p.carb} T${p.fat} /100 g${p.pack?` · opak. ${p.pack} g`:""}</div>
+        ${niespojnosc(p) ? `<div class="tiny warn">kcal ≠ makro: z B/W/T wychodzi ${Math.round(kcalZMakro(p))} kcal,
+          na etykiecie ${p.kcal}. Przy porcji ${typowaPorcja(p.id)} g to
+          ${niespojnosc(p)>0?"+":""}${Math.round(niespojnosc(p)*typowaPorcja(p.id)/100)} kcal różnicy</div>` : ""}
       </div><div class="row" style="gap:6px">
         <button class="pill ${p.excluded?"on":""}" data-excl="${p.id}">${p.excluded?"nie jem":"jem"}</button>
         <button class="btn ghost sm" data-prod="${p.id}">Edytuj</button></div></div>`;
@@ -1389,6 +1424,8 @@ function renderProducts(){
   });
   const wrap = document.getElementById("prodList");
   wrap.innerHTML = html || `<div class="empty"><h3>Brak produktu</h3><p class="small">Zeskanuj etykietę albo dodaj ręcznie.</p></div>`;
+  wrap.querySelectorAll("[data-ptab]").forEach(b=> b.onclick=()=>{
+    prodTylkoNiespojne = b.dataset.ptab === "bad"; renderProducts(); });
   wrap.querySelectorAll("[data-prod]").forEach(b=> b.onclick=()=>prodSheet(b.dataset.prod));
   wrap.querySelectorAll("[data-excl]").forEach(b=> b.onclick=()=>{
     const p=P(b.dataset.excl); p.excluded=!p.excluded; save(); renderProducts(); });
