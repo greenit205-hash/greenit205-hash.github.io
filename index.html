@@ -336,7 +336,7 @@ video{width:100%;border-radius:12px;background:#000}
    i czyta etykiety — nigdy nie liczy gramatury.
    ========================================================================== */
 
-const APP_VER = "rev19 · 05.09.2026";   // widoczne w Ustawieniach — po aktualizacji sprawdź, czy się zgadza
+const APP_VER = "rev20 · 09.09.2026";   // widoczne w Ustawieniach — po aktualizacji sprawdź, czy się zgadza
 const KEY   = "jadlospis.v2";
 const SLOTS = [{id:"b",name:"Śniadanie"},{id:"l",name:"Obiad"},{id:"d",name:"Kolacja"}];
 const CATS  = ["mięso i ryby","nabiał i jaja","zboża i pieczywo","warzywa","owoce","tłuszcze i orzechy","strączki","inne"];
@@ -1978,8 +1978,22 @@ function bindSettings(){
 function mergePack(d){
   const key = s=>String(s).toLowerCase().trim();
   const byName={}; S.products.forEach(p=>byName[key(p.name)]=p.id);
+  /* Paczka z "update":true nadpisuje makro istniejących produktów po nazwie.
+     Zwykła paczka (bez tego pola) tylko dopisuje nowe — tak jak dotąd. */
+  let poprawione = 0;
   (d.products||[]).forEach(p=>{
-    if(byName[key(p.name)]) return;
+    const istn = byName[key(p.name)] ? P(byName[key(p.name)]) : null;
+    if(istn){
+      if(!d.update) return;
+      if(p.kcal!=null) istn.kcal=+p.kcal;
+      if(p.prot!=null) istn.prot=+p.prot;
+      if(p.carb!=null) istn.carb=+p.carb;
+      if(p.fat!=null)  istn.fat=+p.fat;
+      if(p.piece!=null) istn.piece=p.piece||null;
+      if(p.pack!=null)  istn.pack=p.pack||null;
+      poprawione++;
+      return;
+    }
     const id=uid();
     S.products.push({id, name:p.name, kcal:+p.kcal||0, prot:+p.prot||0, carb:+p.carb||0, fat:+p.fat||0,
       cat:CATS.includes(p.cat)?p.cat:"inne", piece:p.piece||null, pack:p.pack||null, excluded:false, source:"paczka"});
@@ -2002,6 +2016,7 @@ function mergePack(d){
       rating:Math.min(5,Math.max(1,+m.rating||3)), time:+m.time||20, tags:m.tags||[], ings});
     have.add(key(m.name)); added++;
   });
+  if(poprawione) toast(`Poprawione produkty: ${poprawione}.`);
   if(d.settings){
     const t=d.settings;
     if(t.kcal) S.settings.kcal=+t.kcal; if(t.prot) S.settings.prot=+t.prot; if(t.fat) S.settings.fat=+t.fat;
